@@ -1,0 +1,4 @@
+- Add hartree energies of EACH state in the parser
+- Add suggested alpha
+- Add xms-caspt2 calcs and parsing
+- Add S1 opt
