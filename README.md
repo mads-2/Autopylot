@@ -8,3 +8,4 @@ The `test_input.yaml` file contains information of active space (CASSCF, FOMO-CA
 The program `autopilot.py` launches the Terachem and Turbomole computations. When running this, please type `python autopilot.py -i test_input.yaml`. This will automatically generate and launch a bunch of computations on GPU nodes, while writing one folder for each.\
 The program `energies_parser.py` reads and extracts data from computation output files, while `results_collector.py` makes data into a plotable .csv file. You can test this by typing `python results_collector.py -i test_input.yaml`.\
 The program `grader.py` plots and grades each results automatically. Run with `python grader.py -i test_input.yaml`. Note that when EOM results are not available, it will not be able to print but still able to plot. You might want to comment out those lines with EOM and still do the plotting.
+# hello word!
