@@ -1,0 +1,4 @@
+{
+    // "cornflakes.linter.executablePath": "/anaconda3/envs/autocas/bin/flake8"
+    "cornflakes.linter.executablePath": "/home/elipieri/.conda/envs/autocas/bin/flake8"
+}
