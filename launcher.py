@@ -40,5 +40,5 @@ def launch_TMcalculation(folder: Path, geometry_file: Path, n_singlets, n_triple
         TurbomoleInput.from_default_eom(n_singlets, n_triplets, 'define-inputs.txt')
         newjob.prep_eom_calc()
         newjob.write_sbatch_TURBOMOLE()
-        os.system('sbatch submit.sbatch')
+        os.system('sbatch submit.sbatch') #this is a random comment!
         print(f'Launched {folder} on {geometry_file.stem}!')
