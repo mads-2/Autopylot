@@ -56,11 +56,11 @@ def main():
             optim = io.read_trajectory(file_opt)
             io.write_last_frame_to_file(optim, fol_name / f'{mol_name}.xyz')
             print(f'I wrote the optimized geometry as {mol_name}.xyz and moved the initial geometry to {mol_name}_initial.xyz.')
-    #Optimize the ground state geometry with DFT
+    #  Optimize the ground state geometry with DFT
     assert (settings['reference']['method'] == 'eom'), "I only know how to use EOM-CC2 in TURBOMOLE as a reference."
     print("I will use the EOM-CC2 as a reference. Launching calculation now. This one might take a while to finish!")
     launch_TMcalculation(fol_name / 'eom', geom_file, n_singlets-1, n_triplets)
-    #Above line launches Turbomole computation, for eom-ccsd or eom-cc2
+    #  Above line launches Turbomole computation, for eom-ccsd or eom-cc2
     if settings['candidates']:
         for calc_type in settings['candidates']:
             print(f"I will launch {calc_type} calculations now.")
@@ -70,12 +70,12 @@ def main():
                 'n_singlets': n_singlets,
                 'n_triplets': n_triplets,
                 'calc_type': calc_type,
-            }   #Input parameters for Terachem excited state computation
+            }  #  Input parameters for Terachem excited state computation
             case_settings = vee_settings | settings['candidates'][calc_type]
             candidates_list = CandidateListGenerator(**case_settings)
             for candidate in candidates_list.create_candidate_list():
                 launch_TCcalculation(fol_name / f'{calc_type}{candidate.folder_name}', geom_file, settings['general'] | candidate.calc_settings)
-                #Launch Terachem computations
+                #  Launch Terachem computations
 
 if __name__ == "__main__":
     main()
