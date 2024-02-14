@@ -30,7 +30,7 @@ def main():
     geom_file = fol_name / geometry
     mol_name = Path(geometry).stem
     print(f"I'm reading coordinates from {geometry} and will use {settings['general']['basis']} for all the calculations.")
-
+# Optimize the ground state geometry with DFT
     mol = Molecule.from_xyz(geometry)
     nelec = mol.nelectrons - charge
     print(f"This molecule has {nelec} electrons.")
