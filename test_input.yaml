@@ -1,9 +1,7 @@
 general:
-  coordinates: freq_coor.xyz
+  coordinates: optim.xyz
   basis: 6-31g*
   charge: 0
-optimization:
-  method: pbe0
 reference:
   method: eom
   singlets: 5
@@ -11,9 +9,9 @@ reference:
 candidates:
   fomo:
     fon_temperature: [0.15,0.35]
-    active_space: [[4,4],[6,5],[6,6]]
+    active_space: [[4,4],[6,5],[6,6],[8,6],[8,7],[8,8],[10,7],[10,8],[10,9],[10,10]]
   casscf:
-    active_space: [[4,4],[6,5],[6,6]]
+    active_space: [[4,4],[6,5],[6,6],[8,6],[8,7],[8,8],[10,7],[10,8],[10,9],[10,10]]
   hhtda:
     method: ['wpbe','wB97x']
     rc_w: [0.2,0.5]
@@ -21,9 +19,4 @@ candidates:
     method: ['wpbe','wB97x']
     fon_temperature: [0.15,0.35]
     rc_w: [0.2,0.5]
-    active_space: [[4,4],[6,5],[6,6]]
-  casdft:
-    method: ['wpbe','wB97x']
-    fon_temperature: [0.15,0.35]
-    rc_w: [0.2,0.5]
-    active_space: [[4,4],[6,5],[6,6]]
+
