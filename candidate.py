@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 import io_utils as io
-# This code automatically generates the Terachem computations with different methods
+
 
 @dataclass
 class CandidateListGenerator:
@@ -31,18 +31,18 @@ class CandidateListGenerator:
 
 @dataclass
 class Candidate:
-    calc_type: str # Method name
-    nelec: int # Number of electrons
-    charge: int # Charge of the molecule
-    n_singlets: int # Number of singlets to be calculated
-    n_triplets: int # Number of triplets to be calculated
+    calc_type: str
+    nelec: int
+    charge: int
+    n_singlets: int
+    n_triplets: int
     method: Optional[str] = None
     fon_temperature: Optional[float] = None
     rc_w: Optional[float] = None
     active_space: Optional[list[int]] = None
 
     @property
-    def orbitals(self): 
+    def orbitals(self):
         if self.active_space:
             return self.active_space[1]
         else:
@@ -58,9 +58,9 @@ class Candidate:
     @property
     def folder_name(self):
         name = f'_{self.method}' if self.method else ""
-        name += f'_T={self.fon_temperature}' if self.fon_temperature else ""
-        name += f'_w={self.rc_w}' if self.rc_w else ""
-        name += f'_({self.electrons},{self.orbitals})' if self.active_space else ""
+        name += f'_T{self.fon_temperature}' if self.fon_temperature else ""
+        name += f'_w{self.rc_w}' if self.rc_w else ""
+        name += f'_AS{self.electrons}{self.orbitals}' if self.active_space else ""
         return name
 
     def validate_as(self):
@@ -72,7 +72,7 @@ class Candidate:
 
     @property
     def calc_settings(self):
-        if self.calc_type == 'fomo': # Generate Terachem computation of FOMO-CASCI
+        if self.calc_type == 'fomo':
             new_settings = {
                 'run': 'energy',
                 'method': 'rhf',
@@ -88,7 +88,7 @@ class Candidate:
                 'castriplets': self.n_triplets,
                 'gpus': '2'
                 }
-        if self.calc_type == 'casscf': # Generate Terachem computation of CASSCF
+        if self.calc_type == 'casscf':
             new_settings = {
                 'run': 'energy',
                 'guess': 'generate',
@@ -105,7 +105,7 @@ class Candidate:
                 'castriplets': self.n_triplets,
                 'gpus': '2'
                 }
-        if self.calc_type == 'casdft': # Generate Terachem computation of CASDFT
+        if self.calc_type == 'casdft':
             new_settings = {
                 'run': 'energy',
                 'threall': '1.1e-14',
@@ -125,7 +125,7 @@ class Candidate:
                 'castriplets': self.n_triplets,
                 'gpus': '2'
                 }
-        if self.calc_type == 'hhtda': # Generate Terachem computation of hh-TDA
+        if self.calc_type == 'hhtda':
             new_settings = {
                 'run': 'energy',
                 'charge': int(self.charge-2),
@@ -147,7 +147,7 @@ class Candidate:
                 'hhtdatriplets': self.n_triplets,
                 'gpus': '2'
                 }
-        if self.calc_type == 'hhtda_fomo': # Generate Terachem computation of hh-TDA-FOMO
+        if self.calc_type == 'hhtda_fomo':
             new_settings = {
                 'run': 'energy',
                 'threall': '1.1e-14',
@@ -167,7 +167,7 @@ class Candidate:
                 'cisconvtol': '1.0e-6',
                 'cisnumstates': int(self.n_singlets + self.n_triplets),
                 'closed': 0,
-                'active': int((self.nelec/2)+1), # Floating occupation in all occupied orbitals
+                'active': int((self.nelec/2)+1),
                 'hhtdasinglets': self.n_singlets,
                 'hhtdatriplets': self.n_triplets,
                 'gpus': '2'

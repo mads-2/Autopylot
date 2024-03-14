@@ -82,8 +82,8 @@ class Grader:
         methods = self.data['Method']
         plt.rcParams.update({'font.size': 18})
         fig, [ax0, ax1, ax2] = plt.subplots(3, 1, figsize=[cand_number/2, 18], sharex=True, sharey=False, gridspec_kw={'wspace': 0, 'hspace': 0})
-        colors = cm.get_cmap('gist_rainbow', len(self.state_list))
-        my_cmap = cm.get_cmap('rainbow_r')
+        colors = cm.get_cmap('Dark2', len(self.state_list))
+        my_cmap = cm.get_cmap('Dark2_r')
         for i, state in enumerate(self.state_list):
             for j in range(cand_number):
                 dark = state != 'S0' and state[0] == 'S' and self.data[f'{state} osc.'][j] < 0.1

@@ -22,7 +22,47 @@ class TurbomoleInput:
     data: dict
 
     def from_default_eom(n_singlets, n_triplets, input_file='define-inputs.txt'):
-        commands = f'''
+        if n_triplets == 0:
+            commands = f'''
+
+a coord
+*
+no
+b all 6-31G**
+*
+eht
+
+    
+
+scf
+iter
+300
+
+cc
+freeze
+*
+cbas
+
+
+
+
+b all def2-SV(P)
+*
+memory 5000
+ricc2
+model cc2
+maxiter 300
+*
+exci
+irrep=a multiplicity=1 nexc={n_singlets+1}
+spectrum states=all
+exprop states=all
+*
+*
+*
+'''
+        else:
+            commands = f'''
 
 a coord
 *
@@ -53,7 +93,7 @@ model cc2
 maxiter 300
 *
 exci
-irrep=a multiplicity=1 nexc={n_singlets}
+irrep=a multiplicity=1 nexc={n_singlets+1}
 irrep=a multiplicity=3 nexc={n_triplets}
 spectrum states=all
 exprop states=all

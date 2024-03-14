@@ -4,14 +4,14 @@ general:
   charge: 0
 reference:
   method: eom
-  singlets: 5
+  singlets: 3
   triplets: 0
 candidates:
   fomo:
     fon_temperature: [0.15,0.35]
-    active_space: [[4,4],[6,5],[6,6],[8,6],[8,7],[8,8],[10,7],[10,8],[10,9],[10,10]]
+    active_space: [[2,2],[4,3],[4,4],[6,5],[6,6]]
   casscf:
-    active_space: [[4,4],[6,5],[6,6],[8,6],[8,7],[8,8],[10,7],[10,8],[10,9],[10,10]]
+    active_space: [[2,2],[4,3],[4,4],[6,5],[6,6]]
   hhtda:
     method: ['wpbe','wB97x']
     rc_w: [0.2,0.5]
@@ -19,4 +19,3 @@ candidates:
     method: ['wpbe','wB97x']
     fon_temperature: [0.15,0.35]
     rc_w: [0.2,0.5]
-
