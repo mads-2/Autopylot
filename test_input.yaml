@@ -4,7 +4,7 @@ general:
   charge: 0
 reference:
   method: eom
-  singlets: 3
+  singlets: 5
   triplets: 0
 candidates:
   fomo:
