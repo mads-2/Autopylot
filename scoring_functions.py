@@ -7,6 +7,9 @@ def sigmoid(x, steepness=50, inflection_point=0.1):
     y = 1/(1+np.power(10, steepness*(inflection_point-x)))
     return y.astype(int)
 
+def sigmoid2(x, steepness=50, inflection_point=0.1):
+    y = 1/(1+np.power(10, steepness*(inflection_point-x)))
+    return y
 
 def get_ref_df_index(data, string):
     ref_ind = data[data['Method'] == string].index[0]

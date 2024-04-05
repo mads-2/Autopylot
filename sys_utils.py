@@ -46,23 +46,24 @@ terachem tc.in > tc.out'''
     def write_sbatch_TURBOMOLE(self):
         commands = f'''#! /bin/bash
 
-#SBATCH -t 24:00:00
-#SBATCH -J {self.jobname}_{self.new_dir.name}
-#SBATCH --qos=cpu_bigmem
-#SBATCH -p bigmemcpuq
-#SBATCH -c 2
-#SBATCH --mem=50Gb
-#SBATCH --fin=*
-#SBATCH --fout=dscf.out,energy,exstates,mos,restart.cc,ricc2.out,statistics,statistics.ricc2
-cd $SCRATCH
+#SBATCH -p elipierilab
+#SBATCH -N 1
+#SBATCH -n 4
+#SBATCH -J tm
+#SBATCH -mem=50G
+#SBATCH -t 2-00:00:00
+#SBATCH --constraint=[h100]
+#SBATCH --qos gpu_access
+#SBATCH --gres=gpu:1
 
-module load TURBOMOLE/7.4.0
+module load turbomole/7.8
 export PARNODES=2
 export PARA_ARCH="SMP"
 export TURBOMOLE_SYSNAME=x86_64-unknown-linux-gnu_smp
 
-$TURBODIR/bin/x86_64-unknown-linux-gnu_smp/dscf > dscf.out
-$TURBODIR/bin/x86_64-unknown-linux-gnu_smp/ricc2 > ricc2.out
+define < define-inputs.txt
+dscf > dscf.out
+ricc2 > ricc2.out
 '''
         with open('submit.sbatch', 'w') as sbatch_file:
             sbatch_file.write(commands)
