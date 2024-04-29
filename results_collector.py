@@ -93,8 +93,15 @@ class SinglePointResults:
                     sub.append(0.00)
                     sub.append(None)
                 else:
-                    sub.append(v[label].energy)
-                    sub.append(v[label].osc)
+                    excitation = v.get(label)  # Safely get the Excitation object if it exists
+                    if excitation:
+                        energy = excitation.energy  # Directly access attributes from Excitation object
+                        osc = excitation.osc
+                    else:
+                        energy = None
+                        osc = None
+                    sub.append(energy)
+                    sub.append(osc)
             data_list.append([k] + sub)
         return data_list
 

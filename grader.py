@@ -44,16 +44,22 @@ class Grader:
         tot_brightness_array = np.sum(brightness_array, axis=1)
         delta_brightness_array = abs(tot_brightness_array - tot_brightness_array[self.ref_ind])
         osc_score_list = []
+        print("Detailing Oscillator Order Scores Calculation:")
         for i, x in enumerate(delta_brightness_array):
-            if x > 0.5:
-                osc_score_list.append(float(self.n_singlets - x))
+            print(f"Candidate {i}: Total Brightness = {tot_brightness_array[i]}, Delta Brightness = {x}")
+            if x > 0.1:
+                osc_score = float(self.n_singlets - x)
             else:
                 ref = brightness_array[self.ref_ind]
                 vec = brightness_array[i]
                 ind_0, ind_1 = sf.get_diff_indexes(ref, vec)
                 combinations = sf.calculate_combinations(ind_0, ind_1)
                 min_swaps = sf.calculate_min_swaps(combinations)
-                osc_score_list.append(self.n_singlets+(1/(min_swaps+1)))
+                osc_score = self.n_singlets + (1 / (min_swaps + 1))
+        
+            osc_score_list.append(osc_score)
+            print(f"Candidate {i} Score: {osc_score}")
+
         return np.array(osc_score_list)
 
     def s_t_order_filter(self):
@@ -154,15 +160,28 @@ class Grader:
         return run_times
 
     def time_pen(self):
-        time_penalties = {}
+        time_score = {}
         run_times = self.extract_run_times()
+        
+        if 'EOM-CC2' in run_times:
+            del run_times['EOM-CC2']  # Ensure EOM-CC2 does not affect the calculations
+       
         valid_times = [time for time in run_times.values() if not np.isnan(time)]
-        average_time = sum(valid_times) / len(valid_times)
-        print(f"Average time: {average_time} sec")
+        min_time = min(valid_times)
+        max_time = max(valid_times)
+    
         for method, time in run_times.items():
-            time_penalties[method] = ((time - average_time)*0.01) if not np.isnan(time) else np.nan
-            time_penalties['EOM-CC2'] = -1  # Explicitly set time penalty/bonus for EOM-CC2 to -1, giving it a boost to n+3 total grade
-        return self.data['Method'].map(time_penalties)
+            if not np.isnan(time):
+                # Min-max scaling
+                scaled_penalty = (time - min_time) / (max_time - min_time) if max_time > min_time else 0
+                time_score[method] = 1 - scaled_penalty
+            else:
+                 time_score[method] = np.nan
+
+        time_score_mapped = self.data['Method'].map(time_score)
+        time_score_mapped.loc[self.data['Method'] == 'EOM-CC2'] = 1
+
+        return time_score_mapped
 
     def suggested_alpha(self):
         ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
@@ -173,14 +192,14 @@ class Grader:
         return np.array(alpha_list)
 
     def append_score_columns_to_df(self):
-        self.data['Osc. score'] = self.abs_score()
+        self.data['abs score'] = self.abs_score()
         self.data['Energies score'] = self.energy_score()
-        self.data['Time penalty/bonus'] = self.time_pen()
-        self.data['Total score'] = (self.data['Osc. score'] + self.data['Energies score'] - self.data['Time penalty/bonus'])
+        self.data['Time score'] = self.time_pen()
+        self.data['Total score'] = (self.data['abs score'] + self.data['Energies score'] + self.data['Time score'])
         self.data['Suggested alpha'] = self.suggested_alpha()
         self.data.sort_values(by=['Total score'], ascending=False, inplace=True, ignore_index=True)
         print("Method Scores:")
-        print(self.data[['Method', 'Osc. score', 'Energies score', 'Time penalty/bonus', 'Total score']])
+        print(self.data[['Method', 'abs score', 'Energies score', 'Time score', 'Total score']])
 
     def plot_results(self):
         ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
@@ -197,17 +216,28 @@ class Grader:
         #my_cmap = cm.get_cmap('Dark2_r')
         
         for i, state in enumerate(self.state_list):
+            if 'T' in state:
+                linestyle = 'solid' 
+                marker='D'
+                marker_size = 20
+                markerfacecolor = colors(i)
+                markeredgewidth = 2
+            else:
+                linestyle = 'solid'
+                marker = None
+                marker_size = 0
+                markerfacecolor = None
+                markeredgewidth = 0
+            
             for j in self.data.index:
-                dark = state != 'S0' and self.data.loc[j, f'{state} osc.'] < 0.1
-                if dark:
-                    style = (0, (1, 1))
-                else:
-                    style = 'solid'
-                ax0.hlines(y=self.data.loc[j, f'{state} energy'], xmin=j-0.3, xmax=j+0.3, linewidth=5, color=colors(i), ls=style, label=self.state_list[i] if j == xs[0] else "")
-                ax1.hlines(y=norm_ene_array[j][i], xmin=j-0.3, xmax=j+0.3, linewidth=5, color=colors(i), ls=style)
-                
-                #ax0.hlines(y=self.data[f'{state} energy'][j], xmin=xs[j]-0.3, xmax=xs[j]+0.3, linewidth=5, color=colors(i), ls=style, label=self.state_list[i] if j == 0 else "")
-                #ax1.hlines(y=norm_ene_array[j][i], xmin=xs[j]-0.3, xmax=xs[j]+0.3, linewidth=5, color=colors(i), ls=style)
+                dark = state != 'S0' and self.data.loc[j, f'{state} osc.'] < 0.1 and 'S' in state
+                style = 'dotted' if dark else linestyle
+                line_color = colors(i)
+                x_positions = [j - 0.3, j + 0.3]
+                y_value = self.data.loc[j, f'{state} energy']
+                ax0.plot(x_positions, [y_value, y_value], linestyle=style, marker=marker, color=line_color, linewidth=5, label=self.state_list[i] if j == xs[0] else "")
+                ax1.plot(x_positions, [norm_ene_array[j][i], norm_ene_array[j][i]], linestyle=style, marker=marker, color=line_color, linewidth=5)
+
 
         rescaled_scores = sf.rescale(self.data['Total score'])
         ax2.bar(xs, self.data['Total score'], color=grade_colormap(rescaled_scores))
@@ -278,15 +308,22 @@ def main():
     energy_order_scores = grader.s_t_order_filter()
     grader.data['Osc. order score'] = singlet_osc_order
     grader.data['Energy order score'] = 1  # Default value 
-    thresh = n_singlets - 1
+    thresh = n_singlets
 
     if singlet_triplet:
         grader.data['Energy order score'] = grader.energy_order_filter()
-        failed_cand = grader.data[((grader.data['Osc. order score'] <= thresh) & (grader.data['Method'] != 'EOM-CC2')) | (grader.data['Energy order score'] <= 0)]['Method']
-        
+        failed_cand = grader.data[((grader.data['Osc. order score'] <= thresh) & (grader.data['Method'] != 'EOM-CC2')) | (grader.data['Energy order score'] <= 0)]
+
+        print("Failed candidates and their scores:")
+        for index, row in failed_cand.iterrows():
+            print(f"{row['Method']}: Osc. Order Score = {row['Osc. order score']}, Energy Order Score = {row['Energy order score']}")
     else:
-        failed_cand = grader.data[(grader.data['Osc. order score'] <= thresh) & (grader.data['Method'] != 'EOM-CC2')]['Method']
-    
+        failed_cand = grader.data[(grader.data['Osc. order score'] <= thresh) & (grader.data['Method'] != 'EOM-CC2')]
+
+        print("Failed candidates and their scores:")
+        for index, row in failed_cand.iterrows():
+            print(f"{row['Method']}: Osc. Order Score = {row['Osc. order score']}")
+
     failed_cand_dir = os.path.join(fol_name, 'failed_candidates')
 
     if not os.path.exists(failed_cand_dir):
@@ -302,7 +339,7 @@ def main():
             except Exception as e:
                 print(f'Failed to delete {file_path}. Reason: {e}')
 
-    for method in failed_cand:
+    for method in failed_cand['Method'].tolist():
         src_dir = os.path.join(fol_name, method)
         dst_dir = os.path.join(failed_cand_dir, method)
         if os.path.exists(src_dir):

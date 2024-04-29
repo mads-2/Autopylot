@@ -50,7 +50,7 @@ terachem tc.in > tc.out'''
 #SBATCH -N 1
 #SBATCH -n 4
 #SBATCH -J tm
-#SBATCH -mem=50G
+#SBATCH --mem=50G
 #SBATCH -t 2-00:00:00
 #SBATCH --constraint=[h100]
 #SBATCH --qos gpu_access
@@ -69,7 +69,7 @@ ricc2 > ricc2.out
             sbatch_file.write(commands)
 
     def prep_eom_calc(self):
-        os.system(f'module load TURBOMOLE/6.4; x2t {self.jobname}.xyz > coord; define < define-inputs.txt &> define.log')
+        os.system(f'module load turbomole/7.8; x2t {self.jobname}.xyz > coord; define < define-inputs.txt &> define.log')
 
 
 def main():
