@@ -1,8 +1,7 @@
 general:
   coordinates: optim.xyz
   basis: 6-31g*
-  charge: 0
-  singlet_triplet: true
+  charge: 0  
 reference:
   method: eom
   singlets: 5
@@ -20,3 +19,19 @@ candidates:
     method: ['wpbe','wB97x']
     fon_temperature: [0.15,0.35]
     rc_w: [0.2,0.5]
+grader:
+  character_filter:
+    inflection_point: 0.2 #Inflection point of the filter sigmoid, steepness doesnt matter as value will snap to integer 
+    char_thresh: 0.2 #Diffence in absorptivity allowed without full penalty 
+  order_filter:    
+    singlet_triplet: true #Energy order filter True/False
+    Ediff: 0.2 #Energy difference allowed for energy order filter  
+  abs_grader:
+    pen_mult_a: 3 #Multiplier (a) to abs_grader
+    a_cutoff: 0.1 #Threshold of Bright/Dark status
+    a_steepness: 50 #Steepness of the grader sigmoid
+    a_inflection_point: 0.05 #Inflection point of the grader sigmoid
+  energy_grader:
+    pen_mult_b: 3 #Multiplier (b) to energy_grader
+  time_grader:
+    pen_mult_c: 1 #Multiplier (c) to time_grader

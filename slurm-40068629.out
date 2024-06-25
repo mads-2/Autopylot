@@ -1,0 +1,17 @@
+I'm reading coordinates from optim.xyz and will use 6-31g* for all the calculations.
+Traceback (most recent call last):
+  File "/work/users/g/c/gcurtin/calculations/autopilot/grader.py", line 559, in <module>
+    main()
+  File "/work/users/g/c/gcurtin/calculations/autopilot/grader.py", line 464, in main
+    results.save_csv()
+  File "/work/users/g/c/gcurtin/calculations/autopilot/results_collector.py", line 113, in save_csv
+    self.df.to_csv(f'{self.pointname}_RAW_results.csv')
+  File "/work/users/g/c/gcurtin/calculations/autopilot/results_collector.py", line 110, in df
+    return pd.DataFrame(self.data_list, columns=self.col_header_list)
+  File "/work/users/g/c/gcurtin/calculations/autopilot/results_collector.py", line 89, in data_list
+    for k, v in self.results_dict.items():
+  File "/work/users/g/c/gcurtin/calculations/autopilot/results_collector.py", line 60, in results_dict
+    parse_eom.parse_TM()
+  File "/work/users/g/c/gcurtin/calculations/autopilot/energies_parser.py", line 119, in parse_TM
+    with open(self.fn, "r") as f:
+FileNotFoundError: [Errno 2] No such file or directory: 'eom/ricc2.out'

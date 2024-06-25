@@ -62,6 +62,19 @@ class Candidate:
         name += f'_w{self.rc_w}' if self.rc_w else ""
         name += f'_AS{self.electrons}{self.orbitals}' if self.active_space else ""
         return name
+    
+    @property
+    def full_method(self):
+        full_method = self.calc_type
+        if self.method:
+            full_method += f'_{self.method}'
+        if self.fon_temperature:
+            full_method += f'_T{self.fon_temperature}'
+        if self.rc_w:
+            full_method += f'_w{self.rc_w}'
+        if self.active_space:
+            full_method += f'_AS{self.electrons}{self.orbitals}'
+        return full_method
 
     def validate_as(self):
         if self.active_space:
@@ -72,7 +85,7 @@ class Candidate:
 
     @property
     def calc_settings(self):
-        if self.calc_type == 'fomo':
+        if self.calc_type == 'casscf_fomo':
             new_settings = {
                 'run': 'energy',
                 'method': 'rhf',

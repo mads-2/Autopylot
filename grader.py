@@ -10,11 +10,16 @@ from sklearn.metrics import r2_score
 from autopilot import read_single_arguments
 import io_utils as io
 import shutil
+import time
 import os 
 import re
+from pathlib import Path
 from results_collector import SinglePointResults
+from candidate import CandidateListGenerator
+from launcher import launch_TCcalculation
+from molecule import Molecule
 
-pd.set_option('display.max_columns', None)
+pd.set_option('display.max_columns', None) 
 
 @dataclass
 class Grader:
@@ -23,31 +28,29 @@ class Grader:
     n_singlets: int
     n_triplets: int
     ref_string: str
+    settings: dict
+    dft_methods_avail = ['wpbe', 'wB97x', 'wpbe', 'wpbeh', 'camb3lyp', 'rhf', 'b3lyp', 'pbe0', 'pbe', 'bhandhlyp', 'blyp', 'pw91', 'b3pw91', 'wb97'] #This is what the code will recognize for the time being
 
     @property
     def state_list(self):
-        state_list = []
-        for i in range(self.n_singlets):
-            state_list.append(f'S{i}')
-        for i in range(self.n_triplets):
-            state_list.append(f'T{i+1}')
-        return state_list
+        return [f'S{i}' for i in range(self.n_singlets)] + [f'T{i+1}' for i in range(self.n_triplets)]
 
     @property
     def ref_ind(self):
-        ref_ind = sf.get_ref_df_index(self.data, self.ref_string)
-        return ref_ind
+        return sf.get_ref_df_index(self.data, self.ref_string)
 
     def singlet_osc_order_filter(self):
+        char_thresh = self.settings['grader']['character_filter']['char_thresh']
+        inflection_point = self.settings['grader']['character_filter']['inflection_point']
         osc_array = np.array([self.data[x] for x in [f'S{x+1} osc.' for x in range(self.n_singlets-1)]]).transpose()
-        brightness_array = sf.sigmoid(osc_array)
+        brightness_array = sf.sigmoid(osc_array, steepness=50, inflection_point=inflection_point)
         tot_brightness_array = np.sum(brightness_array, axis=1)
         delta_brightness_array = abs(tot_brightness_array - tot_brightness_array[self.ref_ind])
         osc_score_list = []
         print("Detailing Oscillator Order Scores Calculation:")
         for i, x in enumerate(delta_brightness_array):
             print(f"Candidate {i}: Total Brightness = {tot_brightness_array[i]}, Delta Brightness = {x}")
-            if x > 0.1:
+            if x > char_thresh:
                 osc_score = float(self.n_singlets - x)
             else:
                 ref = brightness_array[self.ref_ind]
@@ -63,23 +66,46 @@ class Grader:
         return np.array(osc_score_list)
 
     def s_t_order_filter(self):
+        energy_threshold = self.settings['grader']['order_filter']['Ediff']
         singlet_ene_array = np.array([self.data[x] for x in [f'S{x} energy' for x in range(self.n_singlets)]]).transpose()
         triplet_ene_array = np.array([self.data[x] for x in [f'T{x} energy' for x in range(1, self.n_triplets + 1)]]).transpose()
         combined_ene_array = np.concatenate((singlet_ene_array, triplet_ene_array), axis=1)
         ref_ene = combined_ene_array[self.ref_ind]
+        ref_sorted_indices = np.argsort(ref_ene)
+        #print("Combined Energy Array:")
+        #print(combined_ene_array)
         energy_order_scores = []
         for i in range(combined_ene_array.shape[0]):
-            if i == self.ref_ind:
-                energy_order_scores.append(1)
-                continue
             candidate_ene = combined_ene_array[i]
-            correct_order = all(candidate_ene[j] <= candidate_ene[j + 1] for j in range(len(candidate_ene) - 1))
+            candidate_sorted_indices = np.argsort(candidate_ene)
+            correct_order = np.array_equal(ref_sorted_indices, candidate_sorted_indices)
+            
+            if not correct_order:
+                correct_order = True #Assume correct unless proven otherwise (aka leniency to small mistakes in ordering)
+                for j in range(len(candidate_ene)):
+                    if candidate_sorted_indices[j] != ref_sorted_indices[j]:
+                        actual_index = candidate_sorted_indices[j]
+                        ref_index = ref_sorted_indices[j]
+                        if abs(candidate_ene[actual_index] - ref_ene[ref_index]) > energy_threshold:
+                            correct_order = False
+                            break
+            
+            print(f"Candidate {i} energies: {candidate_ene}, Order Correct: {correct_order}")
             score = 1 if correct_order else 0
             energy_order_scores.append(score)
         return np.array(energy_order_scores)
 
     def abs_score(self, cutoff=0.1):
+        multiplier = self.settings['grader']['abs_grader']['pen_mult_a']
+        cutoff = self.settings['grader']['abs_grader']['a_cutoff']
+        a_steepness = self.settings['grader']['abs_grader']['a_steepness']
+        a_inflection_point = self.settings['grader']['abs_grader']['a_inflection_point']
+        target_dir = 'sigmoid_plots'
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+
         abs_score_list = []
+
         ref_osc_strengths = [self.data.loc[self.ref_ind, f'{state} osc.'] for state in self.state_list[1:]]
         ref_characters = ['Bright' if osc >= cutoff else 'Dark' for osc in ref_osc_strengths]
         print(f"Reference character: {ref_characters}")
@@ -99,9 +125,10 @@ class Grader:
                 else:
                     deviation = abs(f_osc - cutoff)
                     deviations.append(deviation)
-                    penalty = sf.sigmoid2(deviation, steepness=50, inflection_point=cutoff/2)
+                    penalty = sf.sigmoid2(deviation, steepness=a_steepness, inflection_point=a_inflection_point)
                     print(f"Deviation: {deviation}, Penalty: {penalty: 0.10f}")
-                    score += (1 - penalty)
+                    score_increment = max(0,(1 - (penalty * multiplier)))
+                    score += score_increment
 
             # Average/Normalized score, S0 excluded
             score /= (len(self.state_list) - 1)
@@ -110,78 +137,68 @@ class Grader:
 
             plt.figure()
             x_values = np.linspace(0, max(ref_osc_strengths) * 1.5, 100)  # Adjust the range as needed
-            y_values = 1 / (1 + np.power(10, 50 * (cutoff / 2 - x_values)))
+            y_values = 1 / (1 + np.power(10, a_steepness * (a_inflection_point - x_values)))
             plt.plot(x_values, y_values, label='Sigmoid')
-            plt.scatter(deviations, [1 / (1 + np.power(10, 50 * (cutoff / 2 - d))) for d in deviations], label=f'{method_name} Deviations')
+            plt.scatter(deviations, [1 / (1 + np.power(10, a_steepness * (a_inflection_point - d))) for d in deviations], label=f'{method_name} Deviations')
             plt.xlabel('Deviation')
             plt.ylabel('Penalty')
             plt.title(f'Sigmoid and Deviations for {method_name}')
             plt.legend()
-            plt.savefig(f'{method_name}_sigmoid_deviation.png')
+            file_path = os.path.join(target_dir, f'{method_name}_sigmoid_deviation.svg')
+            plt.savefig(file_path)
             plt.close()
+            print(f"Saved plot to {file_path}")
 
         return np.array(abs_score_list)
 
     def energy_score(self):
+        multiplier = self.settings['grader']['energy_grader']['pen_mult_b'] 
         ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
         norm_ene_array = sf.normalize_energy_array(ene_array)
         #sum_score_list = []
         rmsd_score_list = []
         for i in range(norm_ene_array.shape[0]):
             rmsd = np.sqrt(np.mean((norm_ene_array[self.ref_ind] - norm_ene_array[i]) ** 2))
-            rmsd_score_list.append(1 - rmsd)
+            rmsd_score_list.append(1 - (multiplier*rmsd))
         return np.array(rmsd_score_list)
     
-    def extract_run_times(self):
+    def extract_run_times(self, methods):
         run_times = {}
         cwd = os.getcwd()
-        for method in self.data['Method']:
-            folder_path = os.path.join(cwd, method)
-            output_path = os.path.join(folder_path, 'tc.out')
-            try:    
+        extract_time_pattern = re.compile(r'Total processing time:\s*([\d.]+)\s*sec')
+        for method in methods:
+            folder_path = os.path.join(cwd, f"gradient_{method}")  # Assuming gradient calculations are stored in directories prefixed with 'gradient_'
+            output_path = os.path.join(folder_path, 'tc.out')  # Adjust filename as per your gradient calculation output file
+            try:
                 with open(output_path, 'r', encoding='utf-8') as file:
-                    found_time = False
                     for line in file:
-                        #print(f"Processing line: |{line}|")
-                        match = re.search(r'Total processing time:\s*([\d.]+)\s*sec', line)
+                        match = extract_time_pattern.search(line)
                         if match:
-                            time = float(match.group(1))
-                            run_times[method] = time
-                            found_time = True
-                            print(f"Found time: {time} sec for method: {method}")
+                            run_times[method] = float(match.group(1))
                             break
-                        if not found_time:
-                            #print(f"Time not found in file: {output_path}")
-                            run_times[method] = np.nan
+                    else:
+                        run_times[method] = np.nan  # Set NaN if no time found
             except FileNotFoundError:
-                if method not in ['EOM-CC2', 'EOM-CCSD']:
-                    print(f"File not found: {output_path}, and if its EOM-CC2/CCSD thats ok!")
-                    run_times[method] = np.nan
+                run_times[method] = np.nan  # Set NaN if file not found
         return run_times
 
     def time_pen(self):
-        time_score = {}
-        run_times = self.extract_run_times()
-        
-        if 'EOM-CC2' in run_times:
-            del run_times['EOM-CC2']  # Ensure EOM-CC2 does not affect the calculations
-       
-        valid_times = [time for time in run_times.values() if not np.isnan(time)]
-        min_time = min(valid_times)
-        max_time = max(valid_times)
+        multiplier = self.settings['grader']['time_grader']['pen_mult_c']
+        methods = self.data['Method'].unique()  # Only consider methods for the passed candidates
+        run_times = self.extract_run_times(methods)
     
-        for method, time in run_times.items():
-            if not np.isnan(time):
-                # Min-max scaling
-                scaled_penalty = (time - min_time) / (max_time - min_time) if max_time > min_time else 0
-                time_score[method] = 1 - scaled_penalty
-            else:
-                 time_score[method] = np.nan
+        valid_times = [time for time in run_times.values() if not np.isnan(time)]
+        if valid_times:
+            min_time = min(valid_times)
+            max_time = max(valid_times)
+            time_score = {method: (1 - ((time - min_time) / (max_time - min_time) * multiplier))
+                          for method, time in run_times.items() if not np.isnan(time)}
+        else:
+            time_score = {method: np.nan for method in methods}
 
-        time_score_mapped = self.data['Method'].map(time_score)
-        time_score_mapped.loc[self.data['Method'] == 'EOM-CC2'] = 1
-
-        return time_score_mapped
+        # Map the scores back to the DataFrame
+        self.data['Time score'] = self.data['Method'].map(time_score)
+        self.data.loc[self.data['Method'] == 'EOM-CC2', 'Time score'] = 1  # Optionally assign full score to EOM-CC2 if needed
 
     def suggested_alpha(self):
         ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
@@ -190,7 +207,7 @@ class Grader:
         for exc in ene_array:
             alpha_list.append(ref_max/np.max(exc))
         return np.array(alpha_list)
-
+    
     def append_score_columns_to_df(self):
         self.data['abs score'] = self.abs_score()
         self.data['Energies score'] = self.energy_score()
@@ -201,57 +218,172 @@ class Grader:
         print("Method Scores:")
         print(self.data[['Method', 'abs score', 'Energies score', 'Time score', 'Total score']])
 
-    def plot_results(self):
-        ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
-        norm_ene_array = sf.normalize_energy_array(ene_array)
-        cand_number = len(self.data)
-        xs = list(self.data.index)
-        methods = self.data['Method']
-        plt.rcParams.update({'font.size': 18})
-        fig, [ax0, ax1, ax2] = plt.subplots(3, 1, figsize=[cand_number*2, 18], sharex=True)
-        colors = [(0, 0, 1), (1, 0, 0)]
-        cmap_name = 'grade_colormap'
-        grade_colormap = LinearSegmentedColormap.from_list(cmap_name, colors)
-        colors = cm.get_cmap('Dark2', len(self.state_list))
-        #my_cmap = cm.get_cmap('Dark2_r')
-        
-        for i, state in enumerate(self.state_list):
-            if 'T' in state:
-                linestyle = 'solid' 
-                marker='D'
-                marker_size = 20
-                markerfacecolor = colors(i)
-                markeredgewidth = 2
+    def prepare_data_for_grouping(self):
+        def extract_components(method_name):
+            parts = method_name.split('_')
+            method_base = parts[0]
+            active_space = None
+            dft_method = None
+
+            for part in parts[1:]:
+                if part.startswith('AS'):
+                    if not active_space:
+                        active_space = part
+                elif any(dft in part for dft in self.dft_methods_avail):
+                    if not dft_method:
+                        dft_method = part
+
+            return pd.Series([method_base, active_space, dft_method], index=['Method Base', 'Active Space', 'DFT Method'])
+
+        # Apply the extraction to create a new DataFrame slice
+        components_df = self.data['Method'].apply(extract_components)
+        self.data = self.data.join(components_df)
+
+        # Debug: Print to verify columns
+        print("Extracted components preview:")
+        print(components_df.head())
+        print("Data preview with new columns:")
+        print(self.data.head())
+
+    def rep_cand_select(self):
+        if not self.data.empty:
+            print("Preparing data for grouping. Initial data shape:", self.data.shape)
+
+            # Ensure the necessary columns exist
+            if 'Method Base' in self.data.columns and 'Active Space' in self.data.columns and 'DFT Method' in self.data.columns:
+                # Determine which column to use for each method dynamically
+                self.data['Group Criterion'] = self.data.apply(
+                    lambda x: 'Active Space' if pd.notna(x['Active Space']) else 'DFT Method',
+                    axis=1
+                )
+
+                # Handle None properly by replacing it with a placeholder
+                self.data[['Method Base', 'Active Space', 'DFT Method']] = self.data[['Method Base', 'Active Space', 'DFT Method']].fillna('None')
+
+                # Create a new grouping column based on the determined criterion for each row
+                self.data['Grouping Key'] = self.data.apply(
+                    lambda x: f"{x['Method Base']}_{x[x['Group Criterion']]}", axis=1
+                )
+
+                # Group by 'Grouping Key'
+                grouped = self.data.groupby('Grouping Key', as_index=False)
+                # Apply selection to find the maximum 'Total score' in each group
+                self.data = grouped.apply(lambda x: x.nlargest(1, 'Total score')).reset_index(drop=True)
+
+                print("Data after selecting representative candidates:")
+                print(self.data[['Method', 'Total score']])  # Debug print
+
+                if self.data.empty:
+                    print("Warning: No data available after grouping and selecting representatives. Check grouping logic.")
             else:
-                linestyle = 'solid'
-                marker = None
-                marker_size = 0
-                markerfacecolor = None
-                markeredgewidth = 0
+                print("Necessary grouping columns are missing from DataFrame.")
+        else:
+            print("Data is empty before grouping. Skipping representative selection.")
+
+    def wait_for_completion(self, log_files, timeout=5000, interval=10):
+        """
+        Poll log files for the completion message.
+
+        :param log_files: List of paths to log files.
+        :param timeout: Maximum time to wait in seconds.
+        :param interval: Time between checks in seconds.
+        :return: True if all files have the completion message, False if timeout.
+        """
+        start_time = time.time()
+        time_pattern = re.compile(r'Total processing time:\s*([\d.]+)\s*sec')
+        while time.time() - start_time < timeout:
+            all_completed = True
+            for log_file in log_files:
+                try:
+                    with open(log_file, 'r') as file:
+                        contents = file.read()
+                        if not time_pattern.search(contents):
+                            all_completed = False
+                            break
+                except FileNotFoundError:
+                    all_completed = False
+                    break
+            if all_completed:
+                print("All gradient calculations have completed.")
+                return True
+            time.sleep(interval)  # Sleep before checking again
+            print("Still waiting for gradient calculations to complete...")
+        print("Timeout waiting for gradient calculations to complete.")
+        return False
+
+    def plot_results(self):
+        filtered_data = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
+        if not filtered_data.empty and 'Total score' in filtered_data.columns and not filtered_data['Total score'].isna().all():
+            ene_array = np.array([filtered_data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
+            norm_ene_array = sf.normalize_energy_array(ene_array)
+            cand_number = len(filtered_data)
+            xs = list(filtered_data.index)
+            methods = filtered_data['Method']
+
+            max_width = 150
+            fig_width = min(cand_number * 2, max_width)
+            fig_height = 24
+
+            plt.rcParams.update({'font.size': 18})
+            fig, [ax0, ax1, ax2, ax3] = plt.subplots(4, 1, figsize=[fig_width, fig_height], sharex=True)
+            colors = [(0, 0, 1), (1, 0, 0)]
+            cmap_name = 'grade_colormap'
+            grade_colormap = LinearSegmentedColormap.from_list(cmap_name, colors)
+            colors = cm.get_cmap('tab10', len(self.state_list))
+        
+            for i, state in enumerate(self.state_list):
+                if 'T' in state:
+                    linestyle = 'dotted' 
+                    marker='D'
+                    marker_size = 20
+                    markerfacecolor = colors(i)
+                    markeredgewidth = 2
+                    line_width = 2
+                else:
+                    linestyle = 'solid'
+                    marker = None
+                    marker_size = 0
+                    markerfacecolor = None
+                    markeredgewidth = i
+                    line_width = 5
             
-            for j in self.data.index:
-                dark = state != 'S0' and self.data.loc[j, f'{state} osc.'] < 0.1 and 'S' in state
-                style = 'dotted' if dark else linestyle
-                line_color = colors(i)
-                x_positions = [j - 0.3, j + 0.3]
-                y_value = self.data.loc[j, f'{state} energy']
-                ax0.plot(x_positions, [y_value, y_value], linestyle=style, marker=marker, color=line_color, linewidth=5, label=self.state_list[i] if j == xs[0] else "")
-                ax1.plot(x_positions, [norm_ene_array[j][i], norm_ene_array[j][i]], linestyle=style, marker=marker, color=line_color, linewidth=5)
+                for j in filtered_data.index:
+                    dark = state != 'S0' and filtered_data.loc[j, f'{state} osc.'] < 0.1 and 'S' in state
+                    style = 'dotted' if dark else linestyle
+                    line_color = colors(i)
+                    x_positions = [j - 0.3, j + 0.3]
+                    y_value = filtered_data.loc[j, f'{state} energy']
+                    ax0.plot(x_positions, [y_value, y_value], linestyle=style, marker=marker, color=line_color, linewidth=line_width, label=f'${self.state_list[i].replace("T", "T_").replace("S", "S_")}$' if j == xs[0] else "")
+                    ax1.plot(x_positions, [norm_ene_array[j][i], norm_ene_array[j][i]], linestyle=style, marker=marker, color=line_color, linewidth=line_width)
 
+            # Plot total scores as a bar graph on ax3
+            rescaled_scores = sf.rescale(filtered_data['Total score'])
+            bars = ax3.bar(xs, filtered_data['Total score'], color=grade_colormap(rescaled_scores))
 
-        rescaled_scores = sf.rescale(self.data['Total score'])
-        ax2.bar(xs, self.data['Total score'], color=grade_colormap(rescaled_scores))
-        ax0.set_ylabel('Energy difference [eV]')
-        ax1.set_ylabel('Norm. E. diff.')
-        ax2.set_ylabel('Score')
-        ax2.set_xticks(xs)
-        ax2.set_xlim(-1.0, cand_number)
-        ax2.set_ylim(0.0, max(self.data['Total score']))
-        ax2.set_xticklabels(methods, rotation=90)
-        ax0.legend(fontsize=20, loc='upper left', bbox_to_anchor=(1.01, 1.0))        
-        fig.tight_layout(pad=3.0)
-        fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1, hspace=0, wspace=0.5)
-        fig.savefig(f'{self.pointname}_results.png', dpi=300, bbox_inches='tight')
+            for bar, score in zip(bars, filtered_data['Total score']):
+                ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_height() / 2, f'{score:.2f}', ha='center', va='center', color='black', fontsize=32, rotation=90)
+
+            ax2.plot(xs, filtered_data['abs score'], color='r', label='Abs Score', linewidth=5, marker='8', markersize=20)
+            ax2.plot(xs, filtered_data['Energies score'], color='g', label='Energies Score', linewidth=5, marker='8', markersize=20)
+            ax2.plot(xs, filtered_data['Time score'], color='b', label='Time Score', linewidth=5, marker='8', markersize=20)
+            ax2.plot(xs, filtered_data['Total score'], color='black', label='Total Score', linewidth=5, marker='8', markersize=20)
+
+            ax0.set_ylabel('Energy difference [eV]')
+            ax1.set_ylabel('Norm. E. diff.')
+            ax3.set_ylabel('Score')
+            ax2.set_ylabel('Component Scores and Total')
+            ax2.legend()
+            ax3.set_xticks(xs)
+            ax3.set_xlim(-1.0, cand_number)
+            ax3.set_ylim(0.0, max(filtered_data['Total score']))
+            ax3.set_xticklabels(methods, rotation=90)
+            ax0.legend(fontsize=20, loc='upper left', bbox_to_anchor=(1.01, 1.0))
+
+            fig.tight_layout(pad=3.0)
+            fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1, hspace=0, wspace=0.5)
+            fig.savefig(f'{self.pointname}_results.svg', dpi=300, bbox_inches='tight')
+        else:
+            print("No valid data available to plot.")
 
     def plot_time_histogram(self):
         run_times = self.extract_run_times()
@@ -263,21 +395,49 @@ class Grader:
         plt.ylabel('Frequency')
         plt.title('Histogram of Run Times')
         plt.grid(True)
-        plt.savefig(f'histogram.png')
+        plt.savefig(f'histogram.svg')
         plt.close()
     
+    def export_scores_to_txt(self, filename='passing_scores.txt'):
+        self.data = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
+        if not self.data.empty:
+            #columns to export
+            columns_to_export = ['Method', 'abs score', 'Energies score', 'Time score', 'Total score', 'Osc. order score', 'Energy order score']
+            # Filter the columns to ensure they exist in DataFrame to avoid KeyError
+            existing_columns = [col for col in columns_to_export if col in self.data.columns]
+            # Create a string representation of the DataFrame with the selected columns
+            scores_str = self.data[existing_columns].to_string(index=False, header=True)
+        
+            with open(filename, 'w') as file:
+                file.write(scores_str)
+        
+            print(f"Scores exported to {filename}.")
+        else:
+            print("No data available to export.")
+
     def save_csv(self):
         self.data.dropna(axis='columns', how='all').loc[:, (self.data != 0).any(axis=0)].to_csv(f'{self.pointname}_results.csv', index=False)
    
-    def energy_RMSD_plot(self, grader, output_dir):
+    def energy_RMSD_plot(self, output_dir='energy_score_plots'):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
         # Plot RMSD reference and candidates with y=x trace
-        ene_array = np.array([grader.data[x] for x in [f'{x} energy' for x in grader.state_list]]).transpose()
+        ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
         norm_ene_array = sf.normalize_energy_array(ene_array)
-        ref_norm_ene = norm_ene_array[grader.ref_ind]
-        for i, method in enumerate(grader.data['Method']):
-            if i != grader.ref_ind:
-                candidate_norm_ene = norm_ene_array[i]
-                rmsd = np.sqrt(np.mean((ref_norm_ene - candidate_norm_ene)**2))
+        ref_norm_ene = norm_ene_array[self.ref_ind]
+        
+        if norm_ene_array.size == 0:
+            print("Normalized energy array is empty. Check your data inputs.")
+            return
+        
+        for i, method in enumerate(self.data['Method']):
+            if i == self.ref_ind:
+                continue # avoids plotting reference to itself
+            
+            candidate_norm_ene = norm_ene_array[i]
+            rmsd = np.sqrt(np.mean((ref_norm_ene - candidate_norm_ene)**2))
+            try:    
                 plt.figure(dpi=300)
                 plt.scatter(ref_norm_ene, candidate_norm_ene, label='Data')
                 plt.plot([0, 1], [0, 1], color='red', label='y=x')
@@ -285,81 +445,137 @@ class Grader:
                 plt.ylabel(f'{method} Energies')
                 #plt.title(f'Linear Regression: Reference vs {method}')
                 plt.text(0.05, 0.95, f'RMSD = {rmsd:.2f}', transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
-                plt.savefig(f'{grader.pointname}_{method}_rmsd.png')
+                plot_filename = f'{self.pointname}_{method}_RMSD.svg'
+                plt.savefig(plot_filename)
                 plt.close()
-    
+                print(f"Saved RMSD plot for {method} in {output_dir}")
+
+            except Exception as e:
+                print(f"Failed to generate or save RMSD plot for {method}. Error: {e}")
+                plt.close()
+
 def main():
     args = read_single_arguments()
     fn = args.input_yaml
     settings = io.yload(fn)
     n_singlets = settings['reference']['singlets']
     n_triplets = settings['reference']['triplets']
-    singlet_triplet = settings ['general']['singlet_triplet']
     fol_name = fn.absolute().parents[0]
+    charge = settings['general']['charge']
+    geometry = settings['general']['coordinates']
+    geom_file = fol_name / geometry
+    mol_name = Path(geometry).stem
+    print(f"I'm reading coordinates from {geometry} and will use {settings['general']['basis']} for all the calculations.")
+
+    mol = Molecule.from_xyz(geometry)
+    nelec = mol.nelectrons - charge
     results = SinglePointResults('S0min', n_singlets, n_triplets, fol_name)
     results.save_csv()
     data = pd.read_csv('S0min_RAW_results.csv', index_col=0)
-    
-    # Move any "failed" methods into new directory. Failed if reorganization of singlet and triplet states has occurred 
-    grader = Grader('S0min', data, n_singlets, n_triplets, 'EOM-CC2')
-    grader.plot_time_histogram()
+
+    grader = Grader('S0min', data, n_singlets, n_triplets, 'EOM-CC2', settings)
     grader.append_score_columns_to_df()
-    singlet_osc_order = grader.singlet_osc_order_filter()
-    energy_order_scores = grader.s_t_order_filter()
-    grader.data['Osc. order score'] = singlet_osc_order
-    grader.data['Energy order score'] = 1  # Default value 
-    thresh = n_singlets
+    grader.data['Osc. order score'] = grader.singlet_osc_order_filter()
+    grader.data['Energy order score'] = grader.s_t_order_filter()
 
-    if singlet_triplet:
-        grader.data['Energy order score'] = grader.energy_order_filter()
-        failed_cand = grader.data[((grader.data['Osc. order score'] <= thresh) & (grader.data['Method'] != 'EOM-CC2')) | (grader.data['Energy order score'] <= 0)]
-
-        print("Failed candidates and their scores:")
-        for index, row in failed_cand.iterrows():
-            print(f"{row['Method']}: Osc. Order Score = {row['Osc. order score']}, Energy Order Score = {row['Energy order score']}")
+    # Identify passed candidates
+    if settings['grader']['order_filter']['singlet_triplet']:
+        passed_candidates = grader.data[(grader.data['Osc. order score'] > n_singlets) & (grader.data['Energy order score'] > 0)]
     else:
-        failed_cand = grader.data[(grader.data['Osc. order score'] <= thresh) & (grader.data['Method'] != 'EOM-CC2')]
+        passed_candidates = grader.data[grader.data['Osc. order score'] > n_singlets]
 
-        print("Failed candidates and their scores:")
-        for index, row in failed_cand.iterrows():
-            print(f"{row['Method']}: Osc. Order Score = {row['Osc. order score']}")
+    print(f"Passed candidates:\n{passed_candidates[['Method', 'Osc. order score', 'Energy order score']]}")
 
-    failed_cand_dir = os.path.join(fol_name, 'failed_candidates')
+    failed_candidates = grader.data[~grader.data.index.isin(passed_candidates.index)]
 
-    if not os.path.exists(failed_cand_dir):
-        os.makedirs(failed_cand_dir)
-    else:
-        for filename in os.listdir(failed_cand_dir):
-            file_path = os.path.join(failed_cand_dir, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f'Failed to delete {file_path}. Reason: {e}')
-
-    for method in failed_cand['Method'].tolist():
-        src_dir = os.path.join(fol_name, method)
-        dst_dir = os.path.join(failed_cand_dir, method)
-        if os.path.exists(src_dir):
-            shutil.move(src_dir, dst_dir)
+    # Move failed candidates
+    failed_cand_dir = fol_name / 'failed_candidates'
+    failed_cand_dir.mkdir(exist_ok=True)
+    for method in failed_candidates['Method'].unique():
+        src_dir = fol_name / method
+        dst_dir = failed_cand_dir / method
+        if src_dir.exists():
+            shutil.move(str(src_dir), str(dst_dir))
             print(f"Moved {method} to {failed_cand_dir}")
 
-    # Only methods who passed the filters
-    passed_candidates = grader.data[grader.data['Osc. order score'] > thresh]
-    if singlet_triplet:
-        passed_candidates = passed_candidates[passed_candidates['Energy order score'] > 0]
+    log_files = []
 
-    grader.data = passed_candidates
-    grader.data.reset_index(drop=True, inplace=True)
+    # Run gradient calculations first
+    if not passed_candidates.empty:
+        passed_methods = set(passed_candidates['Method'].unique())
+        print(f"Passed methods for gradient calculation: {passed_methods}")
+
+        if settings['candidates']:
+            for calc_type in settings['candidates']:
+                print(f"I will launch gradient calculations now for calc_type: {calc_type}")
+
+                # Base settings for the calculation type
+                vee_settings = {
+                    'charge': charge,
+                    'nelec': nelec,
+                    'n_singlets': n_singlets,
+                    'n_triplets': n_triplets,
+                    'calc_type': calc_type,
+                }
+
+                # Merge settings specific to the calculation type from YAML
+                case_settings = vee_settings | settings['candidates'][calc_type]
+
+                # Generate a list of candidates using the updated settings
+                candidates_list = CandidateListGenerator(**case_settings).create_candidate_list()
+                print(f"Generated {len(candidates_list)} candidates for calc_type: {calc_type}")
+
+                for candidate in candidates_list:
+                    candidate_full_method = candidate.full_method.replace('__', '_')  # Fix double underscores
+
+                    print(f"Checking candidate: {candidate.folder_name}, calc_type: {calc_type}, methods: {candidate_full_method}")
+
+                    if candidate_full_method in passed_methods:
+                        print(f"calc_type {calc_type} is in passed_methods.")
+                        calc_settings = settings['general'] | candidate.calc_settings
+
+                        # Construct the folder path with 'gradient' instead of 'energy'
+                        folder_path = fol_name / f'gradient_{calc_type}{candidate.folder_name}'
+
+                        if folder_path.exists():
+                            print(f"Directory {folder_path} already exists. Using existing data.")
+                        else:
+                            calc_settings = settings['general'] | candidate.calc_settings
+                            calc_settings['run'] = 'gradient'  # Adjust run setting for gradient calculations
+
+                            # Launch the calculation
+                            print(f"Launching gradient calculation for {candidate.folder_name} with settings: {calc_settings}")
+                            launch_TCcalculation(folder_path, geom_file, calc_settings)
+
+                        log_file = folder_path / 'tc.out'  # Assuming the log file is named 'tc.out'
+                        log_files.append(str(log_file))
+
+                        print(f"Launched gradient calculation for {candidate.folder_name} in {folder_path}")
+                    else:
+                        print(f"Skipping candidate: {candidate.folder_name}, calc_type: {calc_type}, methods: {candidate_full_method}")
+
+        if log_files and not grader.wait_for_completion(log_files):
+            print("Failed to complete all gradient calculations within the timeout.")
+            return
+
+        # Update times from gradient calculations
+        grader.time_pen()
+
+        # Recalculate total scores with updated time scores
+        grader.data['Total score'] = grader.data['abs score'] + grader.data['Energies score'] + grader.data['Time score']
+        grader.data.sort_values(by=['Total score'], ascending=False, inplace=True, ignore_index=True)
+        grader.rep_cand_select()
+
+    else:
+        print("No valid data available to plot. Check filter conditions.")
+
+    grader.export_scores_to_txt()
     grader.plot_results()
-    #grader.save_csv()
-    print(grader.data.dropna(axis='columns', how='all').loc[:, (grader.data != 0).any(axis=0)])
+    grader.energy_RMSD_plot()
+    grader.save_csv()
 
-    output_dir_ene = os.path.join(fol_name, 'energy_score_plots')
-    if not os.path.exists(output_dir_ene):
-        os.makedirs(output_dir_ene)
+    print("Final DataFrame:", grader.data)
 
 if __name__ == "__main__":
     main()
+

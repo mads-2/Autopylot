@@ -80,13 +80,27 @@ class FileParser:
     def add_osc_strengths_into_lines(self, osc_lines):
         new_exc_lines = []
         iterator = iter(osc_lines)
+    
         for line in self.excitation_lines:
-            if line.split()[1] == 'singlet':
-                vosc = next(iterator).split()[7]
-                new_line = f'{line} {vosc}'
-            else:
-                new_line = f'{line} 0.0000'
+            try:
+                if line.split()[1] == 'singlet':
+                   # Try to get the oscillator strength
+                   vosc = next(iterator).split()[7]
+                   new_line = f'{line} {vosc}'
+                else:
+                    new_line = f'{line} 0.0000'
+            except StopIteration:
+                print("Error: Oscillator strengths data is incomplete or malformed.")
+                new_line = f'{line} NaN'
+            except IndexError:
+                print(f"Error: Expected oscillator strength data not found in line: {line}")
+                new_line = f'{line} NaN'
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                new_line = f'{line} NaN'
+        
             new_exc_lines.append(new_line)
+    
         self.excitation_lines = new_exc_lines
         return
 

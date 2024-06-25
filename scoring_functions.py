@@ -3,11 +3,11 @@ import numpy as np
 import itertools as it
 
 
-def sigmoid(x, steepness=50, inflection_point=0.1):
+def sigmoid(x, steepness, inflection_point):
     y = 1/(1+np.power(10, steepness*(inflection_point-x)))
     return y.astype(int)
 
-def sigmoid2(x, steepness=50, inflection_point=0.1):
+def sigmoid2(x, steepness, inflection_point):
     y = 1/(1+np.power(10, steepness*(inflection_point-x)))
     return y
 
