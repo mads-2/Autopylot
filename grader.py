@@ -166,18 +166,23 @@ class Grader:
         run_times = {}
         cwd = os.getcwd()
         extract_time_pattern = re.compile(r'Total processing time:\s*([\d.]+)\s*sec')
+        error_pattern = re.compile(r'terminated')
         for method in methods:
             folder_path = os.path.join(cwd, f"gradient_{method}")  # Assuming gradient calculations are stored in directories prefixed with 'gradient_'
             output_path = os.path.join(folder_path, 'tc.out')  # Adjust filename as per your gradient calculation output file
             try:
                 with open(output_path, 'r', encoding='utf-8') as file:
-                    for line in file:
-                        match = extract_time_pattern.search(line)
+                    content = file.read()
+                    if error_pattern.search(contents):
+                        print(f"Error detected in {output_path}. Skipping method {method}.")
+                        run_to,es[method] = np.nan
+                    else:
+                        match = extract_time_pattern.search(contents)
                         if match:
                             run_times[method] = float(match.group(1))
-                            break
-                    else:
-                        run_times[method] = np.nan  # Set NaN if no time found
+                            run_times[method] = np.nan  # Set NaN if no time found
+                        else:
+                            run_times[method] = np.nan
             except FileNotFoundError:
                 run_times[method] = np.nan  # Set NaN if file not found
         return run_times
@@ -191,8 +196,11 @@ class Grader:
         if valid_times:
             min_time = min(valid_times)
             max_time = max(valid_times)
-            time_score = {method: (1 - ((time - min_time) / (max_time - min_time) * multiplier))
-                          for method, time in run_times.items() if not np.isnan(time)}
+            if min_time == max_time:
+                time_score = 1
+            else:    
+                time_score = {method: (1 - ((time - min_time) / (max_time - min_time) * multiplier))
+                    for method, time in run_times.items() if not np.isnan(time)}
         else:
             time_score = {method: np.nan for method in methods}
 
@@ -291,13 +299,18 @@ class Grader:
         """
         start_time = time.time()
         time_pattern = re.compile(r'Total processing time:\s*([\d.]+)\s*sec')
+        error_pattern = re.compile(r'terminated')
         while time.time() - start_time < timeout:
             all_completed = True
             for log_file in log_files:
                 try:
                     with open(log_file, 'r') as file:
                         contents = file.read()
-                        if not time_pattern.search(contents):
+                        if error_pattern.search(contents):
+                            print(f"Error detected in {log_file}.")
+                            all_completed = False
+                            break
+                        if not extract_time_pattern.search(contents):
                             all_completed = False
                             break
                 except FileNotFoundError:
@@ -445,8 +458,8 @@ class Grader:
                 plt.ylabel(f'{method} Energies')
                 #plt.title(f'Linear Regression: Reference vs {method}')
                 plt.text(0.05, 0.95, f'RMSD = {rmsd:.2f}', transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
-                plot_filename = f'{self.pointname}_{method}_RMSD.svg'
-                plt.savefig(plot_filename)
+                file_path = os.path.join(output_dir, f'{method}_RMSD.svg')
+                plt.savefig(file_path)
                 plt.close()
                 print(f"Saved RMSD plot for {method} in {output_dir}")
 
@@ -526,7 +539,7 @@ def main():
                 print(f"Generated {len(candidates_list)} candidates for calc_type: {calc_type}")
 
                 for candidate in candidates_list:
-                    candidate_full_method = candidate.full_method.replace('__', '_')  # Fix double underscores
+                    candidate_full_method = f"{calc_type}_{candidate.folder_name}".replace('__', '_')
 
                     print(f"Checking candidate: {candidate.folder_name}, calc_type: {calc_type}, methods: {candidate_full_method}")
 
@@ -535,15 +548,12 @@ def main():
                         calc_settings = settings['general'] | candidate.calc_settings
 
                         # Construct the folder path with 'gradient' instead of 'energy'
-                        folder_path = fol_name / f'gradient_{calc_type}{candidate.folder_name}'
+                        folder_path = fol_name / f'gradient_{candidate_full_method}'
 
                         if folder_path.exists():
                             print(f"Directory {folder_path} already exists. Using existing data.")
                         else:
-                            calc_settings = settings['general'] | candidate.calc_settings
                             calc_settings['run'] = 'gradient'  # Adjust run setting for gradient calculations
-
-                            # Launch the calculation
                             print(f"Launching gradient calculation for {candidate.folder_name} with settings: {calc_settings}")
                             launch_TCcalculation(folder_path, geom_file, calc_settings)
 

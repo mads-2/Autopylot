@@ -99,7 +99,8 @@ class Candidate:
                 'active': self.orbitals,
                 'cassinglets': self.n_singlets,
                 'castriplets': self.n_triplets,
-                'gpus': '2'
+                'gpus': '2',
+                'cphfiter': '1000'
                 }
         if self.calc_type == 'casscf':
             new_settings = {
@@ -111,14 +112,15 @@ class Candidate:
                 'precision': 'mixed',
                 'fon': 'yes',
                 'fon_temperature': '0.2',
-                'fon_target': '0.2'
-                'fon_anneal': 'no'
+                'fon_target': '0.2',
+                'fon_anneal': 'no',
                 'casscf': 'yes',
                 'closed': int((self.nelec/2)-(self.electrons/2)),
                 'active': self.orbitals,
                 'cassinglets': self.n_singlets,
                 'castriplets': self.n_triplets,
-                'gpus': '2'
+                'gpus': '2',
+                'cphfiter': '1000'
                 }
         if self.calc_type == 'casdft':
             new_settings = {

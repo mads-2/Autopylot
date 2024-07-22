@@ -11,6 +11,8 @@ class Excitation:
     @classmethod
     def from_string(cls, excitation: str):
         fields = excitation.split()
+        if len(fields) < 7:
+            raise ValueError(f"Expected at least 7 fields, got {len(fields)}. Fields: {fields}")
         state = fields[1]
         vee = float(fields[4])
         osc = float(fields[6])
@@ -58,8 +60,18 @@ class FileParser:
         new_exc_lines = []
         iterator = iter(nm_lines)
         for line in self.excitation_lines:
-            vnm = next(iterator).split()[3]
-            new_line = f'{line} {vnm}'
+            if line.split()[1] == 'singlet':
+                try:
+                    split_line = next(iterator).split()
+                    if len(split_line) > 3:  # Ensure there are enough elements
+                        vnm = split_line[3]
+                    else:
+                        vnm = "0.0000"  # Assign a default value or handle appropriately
+                except StopIteration:
+                    vnm = "0.0000"  # Assign a default value or handle appropriately if nm_lines is exhausted
+                new_line = f'{line} {vnm}'
+            else:
+                new_line = f'{line} 0.0000'
             new_exc_lines.append(new_line)
         self.excitation_lines = new_exc_lines
         return
