@@ -170,19 +170,20 @@ class Grader:
         for method in methods:
             folder_path = os.path.join(cwd, f"gradient_{method}")  # Assuming gradient calculations are stored in directories prefixed with 'gradient_'
             output_path = os.path.join(folder_path, 'tc.out')  # Adjust filename as per your gradient calculation output file
+            
             try:
                 with open(output_path, 'r', encoding='utf-8') as file:
-                    content = file.read()
+                    contents = file.read()
                     if error_pattern.search(contents):
                         print(f"Error detected in {output_path}. Skipping method {method}.")
-                        run_to,es[method] = np.nan
+                        run_times[method] = np.nan
+                        continue
+
+                    match = extract_time_pattern.search(contents)
+                    if match:
+                        run_times[method] = float(match.group(1))
                     else:
-                        match = extract_time_pattern.search(contents)
-                        if match:
-                            run_times[method] = float(match.group(1))
-                            run_times[method] = np.nan  # Set NaN if no time found
-                        else:
-                            run_times[method] = np.nan
+                        run_times[method] = np.nan
             except FileNotFoundError:
                 run_times[method] = np.nan  # Set NaN if file not found
         return run_times
@@ -197,7 +198,7 @@ class Grader:
             min_time = min(valid_times)
             max_time = max(valid_times)
             if min_time == max_time:
-                time_score = 1
+                time_score = {method: 1.0 for method in run_times.keys()}
             else:    
                 time_score = {method: (1 - ((time - min_time) / (max_time - min_time) * multiplier))
                     for method, time in run_times.items() if not np.isnan(time)}
@@ -298,7 +299,7 @@ class Grader:
         :return: True if all files have the completion message, False if timeout.
         """
         start_time = time.time()
-        time_pattern = re.compile(r'Total processing time:\s*([\d.]+)\s*sec')
+        extract_time_pattern = re.compile(r'Total processing time:\s*([\d.]+)\s*sec')
         error_pattern = re.compile(r'terminated')
         while time.time() - start_time < timeout:
             all_completed = True
