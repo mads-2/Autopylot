@@ -85,6 +85,8 @@ class Candidate:
 
     @property
     def calc_settings(self):
+        new_settings = {}
+
         if self.calc_type == 'casscf_fomo':
             new_settings = {
                 'run': 'energy',

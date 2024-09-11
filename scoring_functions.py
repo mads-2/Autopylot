@@ -32,10 +32,16 @@ def get_diff_indexes(a, b):
 def normalize_energy_array(arr):
     norm_list = []
     for line in arr:
-        norm_line = (line - np.min(line)) / (np.max(line) - np.min(line))
+        line_min = np.min(line)
+        line_max = np.max(line)
+        if line_max == line_min:
+            # Avoid division by zero: if max equals min, set the line to zeros or ones
+            norm_line = np.zeros_like(line)  # or np.ones_like(line) depending on the desired behavior
+            print("Warning: Line has identical values. Normalized to zeros.")
+        else:
+            norm_line = (line - line_min) / (line_max - line_min)
         norm_list.append(norm_line)
     return np.array(norm_list)
-
 
 def calculate_combinations(a, b):
     combinations = []
