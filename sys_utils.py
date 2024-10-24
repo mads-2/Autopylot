@@ -24,7 +24,7 @@ class JobPrepper:
 #SBATCH -N 1
 #SBATCH -n 4
 #SBATCH -J autopilot_test
-#SBATCH --mem=200G
+#SBATCH --mem=32G
 #SBATCH -t 30:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1
@@ -49,7 +49,7 @@ terachem tc.in > tc.out'''
 #SBATCH -N 1
 #SBATCH -n 4
 #SBATCH -J tm
-#SBATCH --mem=100G
+#SBATCH --mem=32G
 #SBATCH -t 2-00:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1

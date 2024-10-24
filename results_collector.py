@@ -11,21 +11,48 @@ from autopilot import read_single_arguments
 from energies_parser import FileParser
 import csv
 
+import shutil
+from pathlib import Path
+
 def exclude_TC_unsuccessful_calculations(fol_name, fn):
     successful_calculation = True
     successful_string = "Job finished:"
-    unsuccessful_path = fol_name / "unsuccessful-calculations"
-    with open(fn) as out_file:
-        if successful_string in out_file.read():
-            print(f'{fn} ended correctly')
-        else:
-            print(f'{fn} HAS PROBLEMS')
-            successful_calculation = False
-            if not unsuccessful_path.is_dir():
-                unsuccessful_path.mkdir()
-            shutil.move(fn.parent, unsuccessful_path)
-    return successful_calculation
+    unsuccessful_path = fol_name / "failed_SPE_jobs"
+    
+    # Check if the log file exists
+    if not fn.exists():
+        print(f"File {fn} not found. Checking failed_SPE_jobs directory...")
 
+        # Check if the directory has already been moved to failed_SPE_jobs
+        moved_path = unsuccessful_path / fn.parent.name
+        if moved_path.exists():
+            print(f"Directory {moved_path} already exists in failed_SPE_jobs. Skipping.")
+            return False
+        else:
+            print(f"Directory {fn.parent} does not exist in failed_SPE_jobs. Continuing.")
+            return False  # If no log file and directory is not already moved, skip
+
+    try:
+        # Open the log file and check for the successful string
+        with open(fn) as out_file:
+            if successful_string in out_file.read():
+                print(f'{fn} ended correctly')
+            else:
+                print(f'{fn} HAS PROBLEMS')
+                successful_calculation = False
+
+                # Move to failed_SPE_jobs if unsuccessful
+                if not unsuccessful_path.is_dir():
+                    unsuccessful_path.mkdir()
+
+                # Move the directory to failed_SPE_jobs
+                shutil.move(str(fn.parent), str(unsuccessful_path / fn.parent.name))
+                print(f"Moved {fn.parent} to {unsuccessful_path}")
+    except FileNotFoundError:
+        print(f"Log file {fn} not found, but directory not yet moved. Skipping calculation.")
+        successful_calculation = False
+
+    return successful_calculation
 
 @dataclass
 class SinglePointResults:
