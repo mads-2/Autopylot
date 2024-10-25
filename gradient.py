@@ -1,7 +1,6 @@
 import os
 import time
 import re
-import sys
 import shutil
 from argparse import ArgumentParser
 from pathlib import Path
@@ -13,33 +12,25 @@ import io_utils as io
 
 def read_single_arguments():
     """Parse input YAML file argument."""
-    description_string = "This script will launch AutoPilot on a geometry"
-    parser = ArgumentParser(description=description_string)
+    parser = ArgumentParser(description="Launch AutoPilot on a geometry.")
     parser.add_argument("-i", "--input_yaml", type=Path, required=True, help="Path of yaml input file")
     return parser.parse_args()
 
 def run_gradient_calculations(yaml_file, timeout=12000, interval=10):
-    """Run gradient calculations for candidates as specified in the YAML file and wait for them to complete."""
-    # Load settings from the YAML file
+    """Run gradient calculations for candidates in the YAML file and wait for all to complete."""
     settings = io.yload(yaml_file)
     n_singlets = settings['reference']['singlets']
-    n_triplets = settings['reference'].get('triplets', 0)  # Default to 0 if not defined
-    fol_name = Path(yaml_file).absolute().parents[0]
+    n_triplets = settings['reference'].get('triplets', 0)
+    fol_name = Path(yaml_file).absolute().parent
     charge = settings['general']['charge']
     geometry = settings['general']['coordinates']
     geom_file = fol_name / geometry
-    mol_name = Path(geometry).stem
-
     mol = Molecule.from_xyz(geometry)
     nelec = mol.nelectrons - charge
     
     log_files = []
-
     if 'candidates' in settings:
         for calc_type in settings['candidates']:
-            print(f"I will launch gradient calculations now for calc_type: {calc_type}")
-
-            # Create the generator with the correct settings
             vee_settings = settings['candidates'][calc_type]
             vee_settings.update({
                 'calc_type': calc_type,
@@ -49,134 +40,91 @@ def run_gradient_calculations(yaml_file, timeout=12000, interval=10):
                 'n_triplets': n_triplets,
             })
 
-            # Merge settings specific to the calculation type from YAML
             case_settings = vee_settings | settings['candidates'][calc_type]
-
-            # Generate a list of candidates using the updated settings
             candidates_list = CandidateListGenerator(**case_settings).create_candidate_list()
-            print(f"Generated {len(candidates_list)} candidates for calc_type: {calc_type}")
-
-            completed_candidates = []
-            for candidate in candidates_list:
-                log_name = fol_name / f'{candidate.full_method}' / 'tc.out'
-                if exclude_TC_unsuccessful_calculations(fol_name, log_name):
-                    completed_candidates.append(candidate)
-                else:  
-                    print(f"Skipping {candidate.folder_name}, failed SPE calculation.")
-
-                print(f"Filtered to {len(completed_candidates)} successful candidates for calc_type: {calc_type}")
+            completed_candidates = [
+                candidate for candidate in candidates_list
+                if exclude_TC_unsuccessful_calculations(fol_name, fol_name / f'{candidate.full_method}' / 'tc.out')
+            ]
 
             for candidate in completed_candidates:
-                candidate.validate_as()
-
-                # Build the folder path and check if it exists
                 gradient_folder_path = fol_name / f'gradient_{candidate.full_method}'
-                print(f"Folder path: {gradient_folder_path}")
-
-                calc_settings = {**settings['general'], **candidate.calc_settings}
-                calc_settings['run'] = 'gradient'
-
-                if gradient_folder_path.exists():
-                    print(f"Directory {gradient_folder_path} already exists. Using existing data.")
-                else:
+                if not gradient_folder_path.exists():
                     os.makedirs(gradient_folder_path, exist_ok=True)
-                    launch_TCcalculation(gradient_folder_path, geom_file, calc_settings)
-                    print(f"Launched gradient calculation for {candidate.folder_name} in {gradient_folder_path}")
+                    launch_TCcalculation(gradient_folder_path, geom_file, candidate.calc_settings | settings['general'])
+                log_files.append((gradient_folder_path / 'tc.out', gradient_folder_path))
 
-                log_file = gradient_folder_path / 'tc.out'
-                log_files.append((log_file, gradient_folder_path, geom_file, calc_settings))
+    failed_jobs, gradient_errors = wait_for_completion(log_files, timeout, interval)
+    move_failed_jobs(failed_jobs, gradient_errors, fol_name)
 
-    failed_jobs = wait_for_completion(log_files, timeout, interval, fol_name)
-
-    if failed_jobs:
-        log_failed_jobs(failed_jobs)
-
-def wait_for_completion(log_files, timeout=12000, interval=10, fol_name=Path()):
-    """Wait for all calculations to complete or timeout."""
+def wait_for_completion(log_files, timeout=12000, interval=10):
+    """Wait for all gradient calculations to complete or timeout, returning lists of incomplete and error jobs."""
     start_time = time.time()
     extract_time_pattern = re.compile(r'Total processing time:\s*([\d.]+)\s*sec')
     error_pattern = re.compile(r'terminated|error')
     failed_jobs = []
-
-    SPEs_of_failed_gradients = fol_name / "SPEs_of_failed_gradients" # Directory for candidates SPEs when their Gradient failed
-    if not SPEs_of_failed_gradients.exists():
-        SPEs_of_failed_gradients.mkdir()
+    gradient_errors = []
 
     while time.time() - start_time < timeout:
         all_completed = True
-        for log_file, gradient_folder_path, geom_file, calc_settings in log_files:
+        for log_file, gradient_folder_path in log_files:
             try:
-                # Check the gradient output file for completion
+                # Only process logs for folders named with "gradient_" to avoid non-gradient jobs
+                if "gradient_" not in gradient_folder_path.name:
+                    continue
+
                 with open(log_file, 'r') as file:
                     contents = file.read()
                     found_processing_time = extract_time_pattern.search(contents)
                     found_error = error_pattern.search(contents)
 
                     if found_processing_time:
-                        print(f"Job completed successfully: {log_file}")
-                        continue  # Job completed successfully, skip to next job
-
+                        continue  # Successful completion, skip to next log
                     elif found_error:
-                        print(f"Error detected in {log_file}. Adding {gradient_folder_path} to failed jobs.")
-                        print(f"Moving {candidate_directory} from CWD. With no gradeint calculation, candidate can not be graded.")
-                        shutil.move(str(candidate_directory), str(SPEs_of_failed_gradients / candidate_directory.name))
-                        failed_jobs.append((log_file, gradient_folder_path, geom_file, calc_settings))
-                        continue  # Move to next job after adding to failed jobs
-
+                        gradient_errors.append((log_file, gradient_folder_path))  # Log as gradient error
                     else:
-                        # If neither error nor success is found, consider it incomplete
-                        all_completed = False
-             
+                        all_completed = False  # Incomplete, continue monitoring
+
             except FileNotFoundError:
-                print(f"Log file {log_file} not found. Adding {gradient_folder_path} to failed jobs.")
-                failed_jobs.append((log_file, gradient_folder_path, geom_file, calc_settings))
-        
+                all_completed = False  # Log file not found yet, keep waiting
+
         if all_completed:
-            print("All gradient calculations have completed (successfully or with errors).")
-            return failed_jobs
+            print("All gradient calculations have completed or failed.")
+            break
 
-        time.sleep(interval)  # Sleep before checking again
         print("Still waiting for gradient calculations to complete...")
+        time.sleep(interval)
 
-def log_failed_jobs(failed_jobs, log_file="failed_gradient_jobs.log", failed_dir="failed_gradient_jobs"):
-    """Log failed jobs for manual inspection and move them to a new directory."""
+    return failed_jobs, gradient_errors
 
-    # Create a directory for failed jobs if it doesn't exist
-    failed_dir_path = Path(failed_dir)
-    failed_dir_path.mkdir(exist_ok=True)
+def move_failed_jobs(failed_jobs, gradient_errors, fol_name):
+    """Move failed jobs to SPEs_of_failed_gradients or failed_gradient_jobs after all jobs are confirmed complete."""
+    SPEs_of_failed_gradients = fol_name / "SPEs_of_failed_gradients"
+    failed_gradient_jobs = fol_name / "failed_gradient_jobs"
+    SPEs_of_failed_gradients.mkdir(exist_ok=True)
+    failed_gradient_jobs.mkdir(exist_ok=True)
 
-    with open(log_file, 'w') as file:
-        for log_file, folder_path, _, _ in failed_jobs:
-            # Log the failed job directory
-            file.write(f"Failed: {folder_path}\n")
+    extract_time_pattern = re.compile(r'Total processing time:\s*([\d.]+)\s*sec')  # Re-check for success
+    for log_file, gradient_folder_path in failed_jobs:
+        # Double-check the pattern to avoid incorrect moves
+        with open(log_file, 'r') as file:
+            if extract_time_pattern.search(file.read()):
+                print(f"Skipping move: {gradient_folder_path} completed successfully.")
+                continue  # Skip moving successful candidates
 
-            # Move the failed job to the new directory
-            dest_path = failed_dir_path / folder_path.name
-            print(f"Moving {folder_path} to {dest_path}")
-            shutil.move(str(folder_path), str(dest_path))  # Move the entire directory
+        candidate_directory = gradient_folder_path.parent / gradient_folder_path.name.replace("gradient_", "")
+        dest_path = SPEs_of_failed_gradients / candidate_directory.name
+        print(f"Moving failed gradient job {candidate_directory} to {dest_path}")
+        shutil.move(str(candidate_directory), str(dest_path))
 
-    print(f"Logged {len(failed_jobs)} failed jobs in {log_file}")
-
-def print_failed_job_counts(failed_spe_dir, failed_gradient_dir):
-    # Get the number of directories in failed_SPE_jobs
-    spe_path = Path(failed_spe_dir)
-    gradient_path = Path(failed_gradient_dir)
-    
-    # Count directories in failed_SPE_jobs
-    spe_dirs = [d for d in spe_path.iterdir() if d.is_dir()]
-    num_spe_dirs = len(spe_dirs)
-    
-    # Count directories in failed_gradient_jobs
-    gradient_dirs = [d for d in gradient_path.iterdir() if d.is_dir()]
-    num_gradient_dirs = len(gradient_dirs)    
-
-    # Print the results
-    print(f"Number of unsuccessful SPE calcuations: {num_spe_dirs}. Please see failed_SPE_jobs Directory")
-    print(f"Number of unsuccessful Gradient calcuations {failed_gradient_dir}: {num_gradient_dirs}. Please see failed_SPE_jobs Directory")
+    # Move specific gradient errors
+    for log_file, gradient_folder_path in gradient_errors:
+        candidate_directory = gradient_folder_path.parent / gradient_folder_path.name.replace("gradient_", "")
+        dest_path = failed_gradient_jobs / candidate_directory.name
+        print(f"Moving job with gradient error {candidate_directory} to {dest_path}")
+        shutil.move(str(candidate_directory), str(dest_path))
 
 if __name__ == "__main__":
     args = read_single_arguments()
     yaml_file = args.input_yaml
-
     run_gradient_calculations(yaml_file)
-    #print_failed_job_counts('failed_SPE_jobs', 'failed_gradient_jobs')

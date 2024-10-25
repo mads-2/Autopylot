@@ -20,7 +20,7 @@ class JobPrepper:
     def write_sbatch_short_TC(self):
         commands = f'''#!/usr/bin/env bash
 
-#SBATCH -p elipierilab
+#SBATCH -p volta-gpu
 #SBATCH -N 1
 #SBATCH -n 4
 #SBATCH -J autopilot_test
