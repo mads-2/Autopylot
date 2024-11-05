@@ -17,7 +17,6 @@ def read_single_arguments():
     # parser.add_argument("-p", "--calc_name", type=str, required=True, help="Prefix for output files (e.g. S0min for S0 minimum)")
     return parser.parse_args()
 
-
 def main():
     args = read_single_arguments()
     fn = args.input_yaml

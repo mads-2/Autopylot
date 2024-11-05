@@ -193,7 +193,6 @@ class Candidate:
                 }
         return new_settings
 
-
 def main():
     fn = Path('test_input.yaml')
     settings = io.yload(fn)
@@ -204,7 +203,6 @@ def main():
     c = b[0]
     c.validate_as()
     print(c.folder_name)
-
 
 if __name__ == "__main__":
     main()

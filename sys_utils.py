@@ -20,16 +20,17 @@ class JobPrepper:
     def write_sbatch_short_TC(self):
         commands = f'''#!/usr/bin/env bash
 
-#SBATCH -p volta-gpu
+#SBATCH -p elipierilab
 #SBATCH -N 1
 #SBATCH -n 4
-#SBATCH -J autopilot_test
+#SBATCH -J boop
 #SBATCH --mem=32G
-#SBATCH -t 30:00:00
+#SBATCH -t 1-00:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1
 
 srun run.sh
+
 '''
         with open(self.new_dir/'submit.sbatch', 'w') as sbatch_file:
             sbatch_file.write(commands)
@@ -48,9 +49,9 @@ terachem tc.in > tc.out'''
 #SBATCH -p elipierilab
 #SBATCH -N 1
 #SBATCH -n 4
-#SBATCH -J tm
+#SBATCH -J ref_boop
 #SBATCH --mem=32G
-#SBATCH -t 2-00:00:00
+#SBATCH -t 6-00:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1
 
@@ -62,6 +63,8 @@ export TURBOMOLE_SYSNAME=x86_64-unknown-linux-gnu_smp
 define < define-inputs.txt
 dscf > dscf.out
 ricc2 > ricc2.out
+
+
 '''
         with open('submit.sbatch', 'w') as sbatch_file:
             sbatch_file.write(commands)
