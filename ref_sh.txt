@@ -1,0 +1,20 @@
+#! /bin/bash
+
+#SBATCH -p elipierilab
+#SBATCH -N 1
+#SBATCH -n 4
+#SBATCH -J ref_boop
+#SBATCH --mem=32G
+#SBATCH -t 6-00:00:00
+#SBATCH --qos gpu_access
+#SBATCH --gres=gpu:1
+
+module load turbomole/7.8
+export PARNODES=2
+export PARA_ARCH="SMP"
+export TURBOMOLE_SYSNAME=x86_64-unknown-linux-gnu_smp
+
+define < define-inputs.txt
+dscf > dscf.out
+ricc2 > ricc2.out
+

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+#SBATCH -p elipierilab
+#SBATCH -N 1
+#SBATCH -n 4
+#SBATCH -J boop
+#SBATCH --mem=32G
+#SBATCH -t 1-00:00:00
+#SBATCH --qos gpu_access
+#SBATCH --gres=gpu:1
+
+srun run.sh
