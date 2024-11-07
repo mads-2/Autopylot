@@ -12,7 +12,7 @@ The program `spectra_grader.py` plots and grades each results automatically. Run
 ### Step-by-Step workflow
 I recommend running calculations in a directory seperate from your autopilot directory to keep things clean and organinzed. As a result I will mention /path/to/autopilot/directory/ as a stand-in for your compiled autopilot path.\
 0. Create the envirnoment if you haven't done so already: `conda env create -f environment.yml`\
-1. Activate Autopilot: In terminal, type: `ml anaconda`, then `conda activate autopilot`\
+1. Activate Autopilot: In terminal, type: `ml anaconda`, then `conda activate autopilot`. You may elect to optimize S0 isdie of autopilot first. To do this, please see `test_input_with_opt.yaml` for setup\
 2. Set your submission scripts to work with your machine: `python /path/to/autopilot/directory/make_sh.py candidate_sh.txt ref_sh.txt`. Example `candidate_sh.txt` and `ref_sh.txt` are provided. You only need to do this once every time you need to use differnt settings on your machine\ 
 3. Run the autopilot program: `python /path/to/autopilot/directory/autopilot.py -i test_input.yaml`\
 4. Once autopilot calulations are done: Run gradient.py: `python /path/to/autopilot/directory/gradient.py -i test_input.yaml`\
@@ -23,5 +23,5 @@ If you would like to still have access to your terminal command line while gradi
 
 ## Visualizing your results: 
 Organized scores will be in `Final_Scores.txt`.\
-The plot with state energies and grader scores can be found in `S0min_results.png`. We are working on the ability to optimize S0 or S1 first before running autopilot, work in progress. I do reccomend you optmize your S0 independent from Autopilot first, then use Autopilot on the optiminzed sctructure.\
+The plot with state energies and grader scores can be found in `S0min_results.png`.
 `spectra_grader.py` will generate a directory `S0min_UVVis_plots` directory: here the plot represent the aligments of each state per candidate against the reference of same said candidate.\ Area Under the Curve (AUC) score is a measure of how accurate the shape of the spectra is in both absorptivity and relative energies of states. Min-Max normalization of average AUC gives AUC score.\ Min-Max normalization of the gradient run times of each candidate yields Time score, currently you can tune the weght of the time score, the default is even weight (1x multiplier).     

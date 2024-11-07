@@ -42,7 +42,7 @@ def main():
                 'threall': '1.1e-14',
                 'convthre': '1.0e-6',
                 'precision': 'mixed',
-                'gpus': '2'
+                'gpus': '1'
         }
         calc_settings = settings['general'] | settings['optimization'] | opt_settings
         opt_path = fol_name / 'opt'
@@ -55,6 +55,8 @@ def main():
             optim = io.read_trajectory(file_opt)
             io.write_last_frame_to_file(optim, fol_name / f'{mol_name}.xyz')
             print(f'I wrote the optimized geometry as {mol_name}.xyz and moved the initial geometry to {mol_name}_initial.xyz.')
+            
+            geom_file = fol_name / f'{mol_name}.xyz'
 
     assert (settings['reference']['method'] == 'eom'), "I only know how to use EOM-CC2 in TURBOMOLE as a reference."
     print("I will use the EOM-CC2 as a reference. Launching calculation now. This one might take a while to finish!")

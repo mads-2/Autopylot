@@ -1,4 +1,8 @@
-- Add hartree energies of EACH state in the parser
-- Add suggested alpha
-- Add xms-caspt2 calcs and parsing
+- Corect implementation of S0 optimizer, autopilot.py needs to wait for S0 opt and use its xyz (last frame only)
 - Add S1 opt
+- Add other high level references otehr than TURBOMOLE's EOM-CC2
+- Change code namings to accept other high-level references
+- Make thesholds settable in yaml, currently hardcoded
+- Take Ref out of AUC normalization
+- Figure out how to handle if every state in the system is dark, minimum AUC fails  
+- Bug Fixes based on QC stress-test results
