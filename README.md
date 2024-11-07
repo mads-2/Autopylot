@@ -1,7 +1,7 @@
-# Autopilot Workflow Description
+# Autopylot Workflow Description
 ### Defininton of work, and step-by-step instructions 
 First, we need to create environment. Type the command: `conda env create -f environment.yml`.\
-After that, before running the package, we need to activate autopilot environment on cluster: `ml anaconda`, following by `conda activate autopilot`.\
+After that, before running the package, we need to activate Autopylot environment on cluster: `ml anaconda`, following by `conda activate autopilot`.\
 There are a lot of python codes in the package we are able to use. The code `launcher.py` contains the functions calling GPU or CPU computations. Currently, only Terachem and Turbomole computations are available. Gaussian or Qchem launcher might be added in the future.\
 The program `candidate.py` contains functions that write Terachem input file. For now, it contains CASSCF, FOMO-CASCI, CASDFT, hh-TDA and hh-TDA-FOMO. This function does not contain some input parameters which are essential for computation (those input parameters are adjusted in the `test_input.yaml`, but we can still edit the convergence parameters inside. We are working on extrenalizing them into the yaml shortly.\
 The `test_input.yaml` file contains information of active space (CASSCF, FOMO-CASCI), temperature (FOMO-CASCI, hh-TDA-FOMO), and width (hh-TDA, hh-TDA-FOMO). We need to input those parameters for different computations.\
@@ -18,10 +18,11 @@ I recommend running calculations in a directory seperate from your autopilot dir
 4. Once autopilot calulations are done: Run gradient.py: `python /path/to/autopilot/directory/gradient.py -i test_input.yaml`\
 5. Once gradient calulations are complete and `gradient.py` is done: Run the grader and collect results: `python /path/to/autopilot/directory/spectra_grader.py -i test_input.yaml`\
 
-###Helpful Tips
+##Helpful Tips
 If you would like to still have access to your terminal command line while gradient.py is running, put the command into a submission script in your machine when available. I personally do this for each step as a safe practice. 
 
 ## Visualizing your results: 
 Organized scores will be in `Final_Scores.txt`.\
 The plot with state energies and grader scores can be found in `S0min_results.png`.
 `spectra_grader.py` will generate a directory `S0min_UVVis_plots` directory: here the plot represent the aligments of each state per candidate against the reference of same said candidate.\ Area Under the Curve (AUC) score is a measure of how accurate the shape of the spectra is in both absorptivity and relative energies of states. Min-Max normalization of average AUC gives AUC score.\ Min-Max normalization of the gradient run times of each candidate yields Time score, currently you can tune the weght of the time score, the default is even weight (1x multiplier).     
+
