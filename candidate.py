@@ -12,7 +12,6 @@ class CandidateListGenerator:
     nelec: int
     charge: int
     n_singlets: int
-    n_triplets: int
     method: Optional[list[str]] = field(default_factory=lambda: [])
     fon_temperature: Optional[list[float]] = field(default_factory=lambda: [])
     rc_w: Optional[list[float]] = field(default_factory=lambda: [])
@@ -23,7 +22,7 @@ class CandidateListGenerator:
         arg_prod = [x if x else [[]] for x in attribute_list]
         candidate_list = []
         for met, fon, rcw, acs in it.product(*arg_prod):
-            d = {'calc_type': self.calc_type, 'nelec': self.nelec, 'charge': self.charge, 'n_singlets': self.n_singlets, 'n_triplets': self.n_triplets, 'method': met, 'active_space': acs, 'rc_w': rcw, 'fon_temperature': fon}
+            d = {'calc_type': self.calc_type, 'nelec': self.nelec, 'charge': self.charge, 'n_singlets': self.n_singlets, 'method': met, 'active_space': acs, 'rc_w': rcw, 'fon_temperature': fon}
             cand = Candidate(**d)
             candidate_list.append(cand)
         return candidate_list
@@ -35,7 +34,6 @@ class Candidate:
     nelec: int
     charge: int
     n_singlets: int
-    n_triplets: int
     method: Optional[str] = None
     fon_temperature: Optional[float] = None
     rc_w: Optional[float] = None
@@ -87,7 +85,7 @@ class Candidate:
     def calc_settings(self):
         new_settings = {}
 
-        if self.calc_type == 'casscf_fomo':
+        if self.calc_type == 'casci_fomo':
             new_settings = {
                 'run': 'energy',
                 'method': 'rhf',
@@ -100,8 +98,9 @@ class Candidate:
                 'closed': int((self.nelec/2)-(self.electrons/2)),
                 'active': self.orbitals,
                 'cassinglets': self.n_singlets,
-                'castriplets': self.n_triplets,
+                #'castriplets': self.n_triplets,
                 'gpus': '2',
+                'maxit': '1000',
                 'cphfiter': '1000'
                 }
         if self.calc_type == 'casscf':
@@ -120,55 +119,56 @@ class Candidate:
                 'closed': int((self.nelec/2)-(self.electrons/2)),
                 'active': self.orbitals,
                 'cassinglets': self.n_singlets,
-                'castriplets': self.n_triplets,
+                #'castriplets': self.n_triplets,
                 'gpus': '2',
+                'maxit': '1000',
                 'cphfiter': '1000'
                 }
-        if self.calc_type == 'casdft':
-            new_settings = {
-                'run': 'energy',
-                'threall': '1.1e-14',
-                'convthre': '1.0e-6',
-                'precision': 'mixed',
-                'method': self.method,
-                'rc_w': self.rc_w,
-                'fon': 'yes',
-                'fon_temperature': self.fon_temperature,
-                'casci': 'yes',
-                'cphftol': '1.0e-6',
-                'cphfiter': '1000',
-                'cphfalgorithm': 'inc_diis',
-                'closed': int((self.nelec/2)-(self.electrons/2)),
-                'active': self.orbitals,
-                'cassinglets': self.n_singlets,
-                'castriplets': self.n_triplets,
-                'gpus': '2'
-                }
+        #if self.calc_type == 'casdft':
+            #new_settings = {
+                #'run': 'energy',
+                #'threall': '1.1e-14',
+                #'convthre': '1.0e-6',
+                #'precision': 'mixed',
+                #'method': self.method,
+                #'rc_w': self.rc_w,
+                #'fon': 'yes',
+                #'fon_temperature': self.fon_temperature,
+                #'casci': 'yes',
+                #'cphftol': '1.0e-6',
+                #'cphfiter': '1000',
+                #'cphfalgorithm': 'inc_diis',
+                #'closed': int((self.nelec/2)-(self.electrons/2)),
+                #'active': self.orbitals,
+                #'cassinglets': self.n_singlets,
+                #'castriplets': self.n_triplets,
+                #'gpus': '2'
+                #}
+        #if self.calc_type == 'hhtda':
+            #new_settings = {
+                #'run': 'energy',
+                #'charge': int(self.charge-2),
+                #'threall': '1.1e-14',
+                #'convthre': '1.0e-6',
+                #'precision': 'mixed',
+                #'hhtda': 'yes',
+                #'method': self.method,
+                #'rc_w': self.rc_w,
+                #'scf': 'diis+a',
+                #'cphftol': '1.0e-6',
+                #'cphfiter': '1000',
+                #'cphfalgorithm': 'inc_diis',
+                #'cismax': '300',
+                #'cismaxiter': '500',
+                #'cisconvtol': '1.0e-6',
+                #'cisnumstates': int(self.n_singlets + self.n_triplets),
+                #'hhtdasinglets': self.n_singlets,
+                #'hhtdatriplets': self.n_triplets,
+                #'gpus': '2'
+                #}
         if self.calc_type == 'hhtda':
             new_settings = {
                 'run': 'energy',
-                'charge': int(self.charge-2),
-                'threall': '1.1e-14',
-                'convthre': '1.0e-6',
-                'precision': 'mixed',
-                'hhtda': 'yes',
-                'method': self.method,
-                'rc_w': self.rc_w,
-                'scf': 'diis+a',
-                'cphftol': '1.0e-6',
-                'cphfiter': '1000',
-                'cphfalgorithm': 'inc_diis',
-                'cismax': '300',
-                'cismaxiter': '500',
-                'cisconvtol': '1.0e-6',
-                'cisnumstates': int(self.n_singlets + self.n_triplets),
-                'hhtdasinglets': self.n_singlets,
-                'hhtdatriplets': self.n_triplets,
-                'gpus': '2'
-                }
-        if self.calc_type == 'hhtda_fomo':
-            new_settings = {
-                'run': 'energy',
                 'threall': '1.1e-14',
                 'convthre': '1.0e-6',
                 'precision': 'mixed',
@@ -184,11 +184,12 @@ class Candidate:
                 'cismax': '300',
                 'cismaxiter': '500',
                 'cisconvtol': '1.0e-6',
-                'cisnumstates': int(self.n_singlets + self.n_triplets),
+                'cisnumstates': int(self.n_singlets),
                 'closed': 0,
                 'active': int((self.nelec/2)+1),
                 'hhtdasinglets': self.n_singlets,
-                'hhtdatriplets': self.n_triplets,
+                'maxit': '1000',
+                #'hhtdatriplets': self.n_triplets,
                 'gpus': '2'
                 }
         return new_settings

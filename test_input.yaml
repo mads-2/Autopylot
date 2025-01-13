@@ -5,7 +5,6 @@ general:
 reference:
   method: eom
   singlets: 5
-  triplets: 0
 candidates:
   fomo:
     fon_temperature: [0.15,0.35]

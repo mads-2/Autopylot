@@ -24,7 +24,6 @@ def main():
     settings = io.yload(fn)
     charge = settings['general']['charge']
     n_singlets = settings['reference']['singlets']
-    n_triplets = settings['reference']['triplets']
     geometry = settings['general']['coordinates']
     geom_file = fol_name / geometry
     mol_name = Path(geometry).stem
@@ -42,6 +41,7 @@ def main():
                 'threall': '1.1e-14',
                 'convthre': '1.0e-6',
                 'precision': 'mixed',
+                'maxit': '1000',
                 'gpus': '1'
         }
         calc_settings = settings['general'] | settings['optimization'] | opt_settings
@@ -60,7 +60,7 @@ def main():
 
     assert (settings['reference']['method'] == 'eom'), "I only know how to use EOM-CC2 in TURBOMOLE as a reference."
     print("I will use the EOM-CC2 as a reference. Launching calculation now. This one might take a while to finish!")
-    launch_TMcalculation(fol_name / 'eom', geom_file, n_singlets-2, n_triplets)
+    launch_TMcalculation(fol_name / 'eom', geom_file, n_singlets-2)
 
     if settings['candidates']:
         for calc_type in settings['candidates']:
@@ -69,7 +69,6 @@ def main():
                 'charge': charge,
                 'nelec': nelec,
                 'n_singlets': n_singlets,
-                'n_triplets': n_triplets,
                 'calc_type': calc_type,
             }
             case_settings = vee_settings | settings['candidates'][calc_type]

@@ -58,38 +58,60 @@ def exclude_TC_unsuccessful_calculations(fol_name, fn):
 class SinglePointResults:
     pointname: str
     n_singlets: int
-    n_triplets: int
+    #n_triplets: int
     pwd: Path
 
     @property
     def results_dict(self):
         results_dict = {}
+        self.runtime_only = {}
         output_files = list(self.pwd.glob('*_*/tc.out'))
+        #print("Files found for processing:")
+        #print([str(fn) for fn in output_files])  # Debug: List all output files
+
         for fn in output_files:
+            # Check for gradient methods
+            if 'gradient_' in str(fn.parent.name):
+                parent_method = fn.parent.name
+                print(f"Processing gradient calculation for runtime only: {parent_method}")
+                self.runtime_only[parent_method] = fn
+                continue
+
+            # Process non-gradient methods
             successful_calculation = exclude_TC_unsuccessful_calculations(self.pwd, fn)
             if successful_calculation:
                 entry_key = str(fn.parent.name)
-                #if 'hhtda' in str(fn):
-                #    hhtda_based = True
-                #else:
-                #    hhtda_based = False
+                print(f"Processing method: {entry_key}")
+
                 if 'hhtda' in str(fn):
-                    parser = FileParser(self.n_singlets, self.n_triplets, True, fn)
-                    parser.parse_TC()
-                    new_entry = parser.create_dict_entry()
-                    results_dict[entry_key] = new_entry
+                    parser = FileParser(self.n_singlets, True, fn)
                 else:
-                    parser = FileParser(self.n_singlets, self.n_triplets, False, fn)
-                    parser.parse_TC()
-                    new_entry = parser.create_dict_entry()
-                    results_dict[entry_key] = new_entry
-        parse_eom = FileParser(self.n_singlets, self.n_triplets, False, 'eom/ricc2.out')
-        parse_eom.parse_TM()
-        new_entry = parse_eom.create_dict_entry()
-        results_dict['EOM-CC2'] = new_entry
-        w = csv.writer(open("TCresult.csv","w"))
-        for key, val in results_dict.items():
-            w.writerow([key,val])
+                    parser = FileParser(self.n_singlets, False, fn)
+
+                parser.parse_TC()
+                new_entry = parser.create_dict_entry()
+                results_dict[entry_key] = new_entry
+
+        # Process EOM-CC2 reference
+        try:
+            parse_eom = FileParser(self.n_singlets, False, 'eom/ricc2.out')
+            parse_eom.parse_TM()
+            new_entry = parse_eom.create_dict_entry()
+            results_dict['EOM-CC2'] = new_entry
+        except FileNotFoundError:
+            print("EOM-CC2 reference file not found. Skipping.")
+
+        # Write results to CSV for debugging
+        with open("TCresult.csv", "w", newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["Method", "Data"])
+            for key, val in results_dict.items():
+                writer.writerow([key, val])
+
+        # Debug: Print runtime_only
+        #print("Runtime-only gradient methods:")
+        #print(self.runtime_only)
+
         return results_dict
 
     @property
@@ -97,8 +119,8 @@ class SinglePointResults:
         state_list = []
         for i in range(self.n_singlets):
             state_list.append(f'S{i}')
-        for i in range(self.n_triplets):
-            state_list.append(f'T{i+1}')
+        #for i in range(self.n_triplets):
+            #state_list.append(f'T{i+1}')
         return state_list
 
     @property
@@ -146,8 +168,8 @@ def main():
     fol_name = fn.absolute().parents[0]
     settings = io.yload(fn)
     n_singlets = settings['reference']['singlets']
-    n_triplets = settings['reference']['triplets']
-    results = SinglePointResults('S0min', n_singlets, n_triplets, fol_name)
+    #n_triplets = settings['reference']['triplets']
+    results = SinglePointResults('S0min', n_singlets, fol_name)
     results.save_csv()
     #results.plot_results()
 

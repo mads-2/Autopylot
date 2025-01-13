@@ -94,37 +94,79 @@ def write_last_frame_to_file(traj: dict, name: Path):
     save_traj(geoms, traj['atomT'], name)
 
 
-def dynamic_check_opt_status(fo, fc):
+def dynamic_check_opt_status(fo, fc, stability_wait_time=240, max_wait_time=100000):
+    """
+    Checks if the optimization is complete based on file size stability and convergence message.
+    
+    Args:
+        fo (str): Path to the primary output file.
+        fc (str): Path to the checkpoint or final structure file.
+        stability_wait_time (int): Time in seconds for file size to remain stable.
+        max_wait_time (int): Maximum wait time in seconds before assuming completion.
+        
+    Returns:
+        bool: True if optimization appears complete based on file size stability and convergence message; False otherwise.
+    """
+    
+    # Wait until both files exist
     while not (os.path.exists(fo) and os.path.exists(fc)):
         time.sleep(1)
-    finished = False
-    while not finished:
-        file1 = os.stat(fo)
-        file1_size = file1.st_size
+    
+    print("Optimization files detected. Monitoring for completion...")
+
+    start_time = time.time()
+    stable_start_time = None
+
+    while True:
+        file1_size = os.stat(fo).st_size
         time.sleep(1)
-        file2 = os.stat(fo)
-        file2_size = file2.st_size
-        comp = file2_size - file1_size
-        if comp == 0:
-            converged = grep_string_in_file("Converged!", fo)
-            finished = True
+        file2_size = os.stat(fo).st_size
+
+        # Check if file size is stable
+        if file1_size == file2_size:
+            # Start timing the stability period
+            if stable_start_time is None:
+                stable_start_time = time.time()
+            elif time.time() - stable_start_time >= stability_wait_time:
+                # Check for the convergence message after file stability
+                converged = grep_string_in_file("Converged!", fo)
+                if converged:
+                    print("The optimization converged successfully!")
+                else:
+                    print("The optimization had problems or did not converge. Check the output.")
+                return converged
         else:
-            time.sleep(10)
-    if converged:
-        print('The optimization converged!')
-    else:
-        print('The optimization had problems. Check it!')
-    return converged
+            # Reset stability timer if file size changes
+            stable_start_time = None
+        
+        # Check for timeout to prevent indefinite waiting
+        if time.time() - start_time > max_wait_time:
+            print("Warning: File size check timed out. Proceeding as if optimization is complete.")
+            return False
 
+        time.sleep(30)
 
-def grep_string_in_file(pattern, fn):
-    '''This function checks if a string is present in a file.
-    It takes a string and a filename as input
-    and returns a boolean (True=string found in file)'''
-    textfile = open(fn, 'r')
-    filetext = textfile.read()
-    string_found_in_file = re.findall(pattern, filetext)
-    return string_found_in_file
+def grep_string_in_file(search_string, file_path):
+    """
+    Searches for a specific string in a file.
+    
+    Args:
+        search_string (str): The string to search for in the file.
+        file_path (str): Path to the file to search.
+        
+    Returns:
+        bool: True if the string is found; False otherwise.
+    """
+    try:
+        with open(file_path, 'r') as file:
+            for line in file:
+                if search_string in line:
+                    return True
+    except FileNotFoundError:
+        print(f"Error: File {file_path} not found.")
+    except Exception as e:
+        print(f"An error occurred while reading the file: {e}")
+    return False
 
 
 def check_calc_status(fn):

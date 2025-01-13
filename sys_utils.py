@@ -20,12 +20,12 @@ class JobPrepper:
     def write_sbatch_short_TC(self):
         commands = f'''#!/usr/bin/env bash
 
-#SBATCH -p elipierilab
+#SBATCH -p volta-gpu
 #SBATCH -N 1
 #SBATCH -n 4
-#SBATCH -J opt_test_autopilot
+#SBATCH -J cand
 #SBATCH --mem=32G
-#SBATCH -t 10:00:00
+#SBATCH -t 3:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1
 
@@ -37,7 +37,7 @@ srun run.sh
         run_commands = '''#!/usr/bin/env bash
 
 # Load necessary modules
-module load tc/24.04
+module load tc/24.11
 
 terachem tc.in > tc.out'''
         with open(os.open(self.new_dir/'run.sh', os.O_CREAT | os.O_WRONLY, 0o777), 'w') as run_file:
@@ -46,12 +46,12 @@ terachem tc.in > tc.out'''
     def write_sbatch_TURBOMOLE(self):
         commands = f'''#! /bin/bash
 
-#SBATCH -p elipierilab
+#SBATCH -p volta-gpu
 #SBATCH -N 1
 #SBATCH -n 4
-#SBATCH -J ref_opt_test
+#SBATCH -J ref
 #SBATCH --mem=32G
-#SBATCH -t 10:00:00
+#SBATCH -t 04:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1
 

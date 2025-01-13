@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-
 @dataclass
 class TerachemInput:
     data: dict
@@ -21,9 +20,8 @@ class TerachemInput:
 class TurbomoleInput:
     data: dict
 
-    def from_default_eom(n_singlets, n_triplets, input_file='define-inputs.txt'):
-        if n_triplets == 0:
-            commands = f'''
+    def from_default_eom(n_singlets, input_file='define-inputs.txt'):
+        commands = f'''
 
 a coord
 *
@@ -61,46 +59,46 @@ exprop states=all
 *
 *
 '''
-        else:
-            commands = f'''
+        #else:
+            #commands = f'''
 
-a coord
-*
-no
-b all 6-31G**
-*
-eht
-
-
-
-scf
-iter
-300
-
-cc
-freeze
-*
-cbas
+#a coord
+#*
+#no
+#b all 6-31G**
+#*
+#eht
 
 
 
+#scf
+#iter
+#300
 
-b all def2-SV(P)
-*
-memory 5000
-ricc2
-model cc2
-maxiter 300
-*
-exci
-irrep=a multiplicity=1 nexc={n_singlets+1}
-irrep=a multiplicity=3 nexc={n_triplets}
-spectrum states=all
-exprop states=all
-*
-*
-*
-'''
+#cc
+#freeze
+#*
+#cbas
+
+
+
+
+#b all def2-SV(P)
+#*
+#memory 5000
+#ricc2
+#model cc2
+#maxiter 300
+#*
+#exci
+#irrep=a multiplicity=1 nexc={n_singlets+1}
+#irrep=a multiplicity=3 nexc={n_triplets}
+#spectrum states=all
+#exprop states=all
+#*
+#*
+#*
+#'''
         with open(input_file, 'w') as fn:
             fn.write(commands)
 

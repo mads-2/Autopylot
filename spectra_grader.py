@@ -25,14 +25,13 @@ class Grader:
     pointname: str
     data: pd.DataFrame
     n_singlets: int
-    n_triplets: int
     ref_string: str
     settings: dict
-    dft_methods_avail = ['wpbe', 'wB97x', 'wpbe', 'wpbeh', 'camb3lyp', 'rhf', 'b3lyp', 'pbe0', 'pbe', 'bhandhlyp', 'blyp', 'pw91', 'b3pw91', 'wb97']
-
+    dft_methods_avail = ['wB97x', 'wpbe', 'wpbeh', 'camb3lyp', 'rhf', 'b3lyp', 'pbe0', 'pbe', 'bhandhlyp', 'blyp', 'pw91', 'b3pw91', 'wb97']
+    
     @property
     def state_list(self):
-        return [f'S{i}' for i in range(self.n_singlets)] + [f'T{i+1}' for i in range(self.n_triplets)]
+        return [f'S{i}' for i in range(self.n_singlets)]
 
     @property
     def ref_ind(self):
@@ -42,7 +41,27 @@ class Grader:
         return a * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
 
     def save_csv(self):
-        self.data.dropna(axis='columns', how='all').loc[:, (self.data != 0).any(axis=0)].to_csv(f'{self.pointname}_results.csv', index=False)
+        try:
+            # Check if `self.data` is empty
+            if self.data is None or self.data.empty:
+                print("Warning: `self.data` is empty. No CSV will be saved.")
+                return
+        
+            # Drop empty columns and ensure only non-zero columns are kept
+            filtered_data = self.data.dropna(axis='columns', how='all').loc[:, (self.data != 0).any(axis=0)]
+        
+            # Ensure there's data to save after filtering
+            if filtered_data.empty:
+                print("Warning: Filtered data is empty. No CSV will be saved.")
+                return
+        
+            # Save the CSV file
+            filtered_data.to_csv(f'{self.pointname}_results.csv', index=False)
+            print(f"CSV saved successfully as {self.pointname}_results.csv")
+    
+        except Exception as e:
+            print(f"Error in `save_csv`: {e}")
+            raise
 
     def extract_run_times(self, methods):
         run_times = {}
@@ -72,7 +91,7 @@ class Grader:
         return run_times
 
     def time_pen(self):
-        multiplier = self.settings['grader']['time_grader']['pen_mult_c']
+        multiplier = self.settings['grader']['time_grader']['time_weight']
         methods = self.data['Method'].unique()
         run_times = self.extract_run_times(methods)
 
@@ -90,9 +109,9 @@ class Grader:
         else:
             time_score = {method: np.nan for method in methods}
 
-        self.data['Time score'] = self.data['Method'].map(time_score)
-        self.data.loc[self.data['Method'] == 'EOM-CC2', 'Time score'] = 1
- 
+        self.data['Time Score'] = self.data['Method'].map(time_score)
+        self.data.loc[self.data['Method'] == 'EOM-CC2', 'Time Score'] = multiplier
+
     def suggested_alpha(self):
         ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
         ref_energies = ene_array[self.ref_ind]
@@ -108,125 +127,151 @@ class Grader:
         return np.array(alpha_list)
 
     def append_score_columns_to_df(self):
-        methods = self.data['Method'].unique()
-        self.data['AUC score'] = self.interval_auc_overlap()
-        self.data['Average AUC Overlap'] = self.auc_overlap
-        self.data['Total score'] = self.data['AUC score'] + self.data['Time score']
-        self.data.sort_values(by=['Total score'], ascending=False, inplace=True, ignore_index=True)
+        methods = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
+        self.data['AUC Score'] = np.nan
+        self.data.loc[methods.index, 'AUC Score'] = self.interval_auc_overlap()
+        self.data.loc[methods.index,'Weighted Min. AUC'] = self.auc_overlap
+        
+        self.data['Parent'] = self.data['Method'].str.replace('gradient','', regex=False)
+        combine_scores = self.data.groupby('Parent').agg({
+            'AUC Score': 'max',
+            'Time Score': 'max',
+        }).reset_index()
+
+        combine_scores['Total Score'] = combine_scores['AUC Score'].fillna(0) + combine_scores['Time Score'].fillna(0)
+        self.data = self.data.merge(combine_scores, on='Parent', how='left', suffixes=('',' '))
+        self.data.sort_values(by=['Total Score'], ascending=False, inplace=True, ignore_index=True)
         
         print("Method Scores:")
-        print(self.data[['Method', 'AUC score','Average AUC Overlap', 'Time score', 'Run Time', 'Total score']])
+        print(self.data[['Method', 'AUC Score','Weighted Min. AUC', 'Time Score', 'Run Time', 'Total Score']])
 
     def interval_auc_overlap(self):
+        # Initialize auc_overlap as a class attribute
+        self.auc_overlap = []
+
+        methods= self.data[~self.data['Method'].str.contains('gradient_', na=False)]
+
+        if methods.empty:
+            print("Missing energies, probalby still counting gradient calculations when it shouldn't")
+            return pd.Series([np.nan] * len(self.data),index=self.data.index)
+
         min_energy = 0
-        max_energy = 20 # defaults for when things go wrong
+        max_energy = 20  # Defaults for when things go wrong
 
+        # Determine the energy range based on the data
         for state in self.state_list:
-            # Get min and max for each state's energy column
-            min_energy = self.data[f'{state} energy'].min()
-            max_energy = self.data[f'{state} energy'].max()
+            min_energy = min(min_energy, methods[f'{state} energy'].min())
+            max_energy = max(max_energy, methods[f'{state} energy'].max())
 
-        #Extend the min and max range by ±2 eV
-        energy_min = min_energy - 2  # Extend 2 eV below the minimum energy
-        energy_max = max_energy + 2  # Extend 2 eV above the maximum energy
+        # Extend the min and max range by ±2 eV
+        energy_min = min_energy - 2
+        energy_max = max_energy + 2
 
         E = np.linspace(energy_min, energy_max, 5000)  # Raw energy range
         sigma = 0.15  # HWHM
-
-        # Generate intervals using np.arange with a step size of 0.1
         intervals = np.arange(energy_min, energy_max, 0.1)  # Raw energy intervals
-        print(f"Intervals: {intervals}")
 
         # Apply suggested alpha for each candidate, including the reference
         suggested_alphas = self.suggested_alpha()
 
-        # Build the reference spectrum (raw energy)
-        ref_row = self.data.iloc[self.ref_ind]
+        # Build the reference spectrum
+        ref_row = methods.iloc[self.ref_ind]
         ref_spectrum = np.zeros_like(E)
         for state in range(1, self.n_singlets):
-            energy_col = f'S{state} energy'.strip()
-            osc_col = f'{energy_col.replace("energy", "osc.")}'.strip()
-            osc_value = ref_row.get(osc_col)
-            if pd.notna(ref_row[energy_col]) and pd.notna(osc_value):
+            energy_col = f'S{state} energy'
+            osc_col = f'{energy_col.replace("energy", "osc.")}'
+            if pd.notna(ref_row[energy_col]) and pd.notna(ref_row[osc_col]):
                 x0 = ref_row[energy_col]
+                osc_value = ref_row[osc_col]
                 ref_spectrum += self.gauss(E, osc_value, x0, sigma)
 
-        auc_overlap = []
-
         # Iterate through all candidates, including the reference
-        for idx, row in self.data.iterrows():
+        for idx, row in methods.iterrows():
             # Build the candidate spectrum
             cand_spectrum = np.zeros_like(E)
-
             for state in range(1, self.n_singlets):
-                energy_col = f'S{state} energy'.strip()
-                osc_col = f'{energy_col.replace("energy", "osc.")}'.strip()
-                osc_value = row.get(osc_col)
-                if pd.notna(row[energy_col]) and pd.notna(osc_value):
-                    cand_spectrum += self.gauss(E, osc_value, row[energy_col], sigma)
+                energy_col = f'S{state} energy'
+                osc_col = f'{energy_col.replace("energy", "osc.")}'
+                if pd.notna(row[energy_col]) and pd.notna(row[osc_col]):
+                    x0 = row[energy_col]
+                    osc_value = row[osc_col]
+                    cand_spectrum += self.gauss(E, osc_value, x0, sigma)
 
-            # Loop through alphas and apply them to shift the states
             alphas_for_candidates = suggested_alphas[idx]
             overlap_per_candidate = []
+            all_interval_differences = []
 
-            # Apply each alpha, and shift all states
-            for i, alpha in enumerate(alphas_for_candidates):
-                spectrum = np.copy(cand_spectrum)  # Start with the original spectrum
+            # Calculate total overlaps and AUC differences for each alpha
+            for alpha in alphas_for_candidates:
+                shifted_spectrum = np.copy(cand_spectrum)
 
-                # Adjust energy of each state for this alpha
+                # Shift all states by the current alpha
                 for state in range(1, self.n_singlets):
-                    energy_col = f'S{state} energy'.strip()
-                    osc_col = f'{energy_col.replace("energy", "osc.")}'.strip()
-                    osc_value = row.get(osc_col)
-                    if pd.notna(row[energy_col]) and pd.notna(osc_value):
-                        scaled_energy = row[energy_col] * alpha  # Apply the current alpha
-                        spectrum += self.gauss(E, osc_value, scaled_energy, sigma) - self.gauss(E, osc_value, row[energy_col], sigma)
+                    energy_col = f'S{state} energy'
+                    osc_col = f'{energy_col.replace("energy", "osc.")}'
+                    if pd.notna(row[energy_col]) and pd.notna(row[osc_col]):
+                        scaled_energy = row[energy_col] * alpha
+                        shifted_spectrum += (
+                            self.gauss(E, row[osc_col], scaled_energy, sigma)
+                            - self.gauss(E, row[osc_col], row[energy_col], sigma)
+                        )
 
-                # Calculate AUC difference for each interval
                 interval_overlaps = []
+                interval_differences = []
+
                 for j in range(len(intervals) - 1):
                     mask = (E >= intervals[j]) & (E < intervals[j + 1])
-                    if np.sum(mask) > 1:  # Ensure there's more than one point
-                        ref_spectrum_segment = ref_spectrum[mask]
-                        spectrum_segment = spectrum[mask]
+                    if np.sum(mask) > 1:  # Ensure there are valid points
+                        ref_segment = ref_spectrum[mask]
+                        cand_segment = shifted_spectrum[mask]
                         energy_segment = E[mask]
 
-                        # Calculate overlap area for each interval
-                        overlap_area = simpson(y=np.minimum(ref_spectrum_segment, spectrum_segment), x=energy_segment)
-                        interval_overlaps.append(overlap_area)
+                        # Calculate AUC for the reference and candidate within this interval
+                        auc_ref = simpson(y=ref_segment, x=energy_segment)
+                        auc_cand = simpson(y=cand_segment, x=energy_segment)
 
-                # Store the total overlap for this alpha
+                        # Compute the raw overlap
+                        raw_overlap = simpson(y=np.minimum(ref_segment, cand_segment), x=energy_segment)
+                        interval_overlaps.append(raw_overlap)
+
+                        # Compute the intensity difference for the penalty
+                        intensity_difference = abs(auc_ref - auc_cand)
+                        interval_differences.append(intensity_difference)
+
+                # Store total overlap and intensity differences for this alpha
                 overlap_total = sum(interval_overlaps)
                 overlap_per_candidate.append(overlap_total)
-                print(f"Candidate {idx}, Alpha {i + 1}: Total AUC overlap = {overlap_total}")
+                all_interval_differences.append(interval_differences)
 
-            if not hasattr(self, 'auc_overlap'):
-                self.auc_overlap = []
-
-            # Calculate the average AUC overlap across all alphas for the candidate
+            # Calculate the average overlap across all alphas
             average_overlap = np.mean(overlap_per_candidate)
-            auc_overlap.append(average_overlap)
-            print(f"Candidate {idx}: Average AUC overlap: {average_overlap}")
 
-            self.auc_overlap.append(average_overlap)
+            # Find the alpha with the maximum total overlap
+            max_overlap_idx = np.argmax(overlap_per_candidate)
+            best_overlap = overlap_per_candidate[max_overlap_idx]
+            best_intensity_differences = all_interval_differences[max_overlap_idx]
 
-        # Filter out the EOM-CC2 candidate for normalization
-        non_eom_overlaps = [x for i, x in enumerate(auc_overlap) if self.data.iloc[i]['Method'] != 'EOM-CC2']
-    
-        if non_eom_overlaps:  # Ensure non-eom overlaps are not empty
-            max_overlap = max(non_eom_overlaps)
-            min_overlap = min(non_eom_overlaps)
-        else:
-            max_overlap = 1
-            min_overlap = 0
+            # Calculate the raw penalty at the best alpha
+            penalty = sum(best_intensity_differences)
+
+            # Adjust the average overlap by subtracting the penalty
+            adjusted_score = average_overlap - penalty
+            self.auc_overlap.append(adjusted_score)  # Append adjusted score to the class attribute
+
+        # Normalize the scores
+        non_eom_overlaps = [
+            x for i, x in enumerate(self.auc_overlap) if methods.iloc[i]["Method"] != "EOM-CC2"
+        ]
+        max_overlap = max(non_eom_overlaps, default=1)
+        min_overlap = min(non_eom_overlaps, default=0)
 
         auc_scores_normalized = []
-        for i, overlap in enumerate(auc_overlap):
-            if self.data.iloc[i]['Method'] == 'EOM-CC2':
-                auc_scores_normalized.append(1.0)  # Full score for EOM-CC2
+        for i, overlap in enumerate(self.auc_overlap):
+            if self.data.iloc[i]["Method"] == "EOM-CC2":
+                auc_scores_normalized.append(1.0)
             else:
                 if max_overlap == min_overlap:
-                    auc_scores_normalized.append(1.0)  # Avoid division by zero, assign full score
+                    auc_scores_normalized.append(1.0)  # Avoid division by zero
                 else:
                     auc_scores_normalized.append((overlap - min_overlap) / (max_overlap - min_overlap))
 
@@ -337,9 +382,8 @@ class Grader:
                 if i > 0:
                     axs[i].axvline(x=aligned_energy, color="black", label=f"Aligned to $S_{i}$ Energy")
 
-                #Set new Y-axis max
                 if alpha == 1:
-                    max_y_value = np.max(spectrum)
+                    max_y_value = max(np.max(spectrum), np.max(ref_spectrum))
 
                 axs[i].plot(E, spectrum, label=f"{formatted_method_name} [$S_{i}$] [α = {alpha:.2f}]", color=color_cycle[i])
                 axs[i].set_ylim(0, max_y_value)
@@ -372,7 +416,7 @@ class Grader:
             t0_value = fomo_match.group(1)
             formatted_name = re.sub(r'fomo_T\d+\.\d+', f'FOMO(t₀ = {t0_value})', formatted_name)
 
-        # Handle CASSCF active space formatting (e.g., AS86 -> (8,6))
+        # Handle CAS active space formatting (e.g., AS86 -> (8,6))
         active_space_match = re.search(r'AS(\d+)', method_name)
         if active_space_match:
             active_space = active_space_match.group(1)
@@ -388,8 +432,8 @@ class Grader:
         if "FOMO" in formatted_name and "CASSCF" in formatted_name:
             formatted_name = formatted_name.replace("CASSCF", "CASCI")
 
-        # Remove redundant "casscf_" and "CASSCF_" prefixes
         formatted_name = re.sub(r'casscf_', '', formatted_name, flags=re.IGNORECASE)
+        formatted_name = re.sub(r'casci_', '', formatted_name, flags=re.IGNORECASE)
         formatted_name = re.sub(r'CASSCF_CASSCF', 'CASSCF', formatted_name)
 
         formatted_name = formatted_name.replace('_', '-')
@@ -400,29 +444,32 @@ class Grader:
             rc_w_value = rc_w_match.group(1)
             formatted_name += f' (ω = {rc_w_value})'
 
-        # Handle hhtda_fomo formatting (e.g., hhtda_fomo_wpbe_T0.15_w0.2 -> FOMO(t0=0.15)hhTDA_wPBE(ω = 0.2))
-        hhtda_match = re.search(r'hhtda_fomo_(\w+)_T(\d+\.\d+)_w(\d+\.\d+)', method_name, re.IGNORECASE)
+        # Handle hhtda_fomo formatting (e.g., hhtda__wpbe_T0.15_w0.2 -> (t0=0.15)hhTDA_wPBE(ω = 0.2))
+        hhtda_match = re.search(r'hhtda_(\w+)_T(\d+\.\d+)_w(\d+\.\d+)', method_name, re.IGNORECASE)
         if hhtda_match:
             functional = hhtda_match.group(1)
             t0_value = hhtda_match.group(2)
             omega_value = hhtda_match.group(3)
-            formatted_name = f'FOMO(t₀ = {t0_value})hhTDA_{functional}(ω = {omega_value})'
+            formatted_name = f'(t₀ = {t0_value})hhTDA_{functional}(ω = {omega_value})'
 
         # Handle hhtda formatting (e.g., hhtda_wpbe_w0.2 -> hhTDA_wPBE(ω = 0.2))
-        hhtda_match = re.search(r'hhtda_(\w+)_w(\d+\.\d+)', method_name, re.IGNORECASE)
-        if hhtda_match:
-            functional = hhtda_match.group(1)
-            omega_value = hhtda_match.group(2)
-            formatted_name = f'hhTDA_{functional}(ω = {omega_value})'
+        #hhtda_match = re.search(r'hhtda_(\w+)_w(\d+\.\d+)', method_name, re.IGNORECASE)
+        #if hhtda_match:
+            #functional = hhtda_match.group(1)
+            #omega_value = hhtda_match.group(2)
+            #formatted_name = f'hhTDA_{functional}(ω = {omega_value})'
 
         return formatted_name
 
     def plot_results(self):
+        top_scores = self.settings['visuals'].get('top_scores', len(self.data))
         # Filter out gradient-related calculations
         filtered_data = self.data[~self.data['Method'].str.contains('gradient_', na=False)].copy()
 
         # Ensure there's valid data to plot
-        if not filtered_data.empty and 'Total score' in filtered_data.columns and not filtered_data['Total score'].isna().all():
+        if not filtered_data.empty and 'Total Score' in filtered_data.columns and not filtered_data['Total Score'].isna().all():
+            filtered_data = filtered_data.sort_values(by='Total Score', ascending=False).head(top_scores)
+
             ene_array = np.array([filtered_data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
             norm_ene_array = sf.normalize_energy_array(ene_array)
 
@@ -477,22 +524,22 @@ class Grader:
                     line_width = 5
             
                 for j in filtered_data.index:
-                    dark = state != 'S0' and filtered_data.loc[j, f'{state} osc.'] < 0.1 and 'S' in state
+                    bright = self.settings['visuals']['countas_bright']
+                    dark = state != 'S0' and filtered_data.loc[j, f'{state} osc.'] < bright and 'S' in state
                     style = 'dotted' if dark else linestyle
                     line_color = colors[i]
                     x_positions = [j - 0.3, j + 0.3]
                     y_value = filtered_data.loc[j, f'{state} energy']
-                    ax0.plot(x_positions, [y_value, y_value], linestyle=style, marker=marker, color=line_color, linewidth=line_width, label=f'${self.state_list[i].replace("T", "T_").replace("S", "S_")}$' if j == xs[0] else "")
-                    
+                    ax0.plot(x_positions, [y_value, y_value], linestyle=style, marker=marker, color=line_color, linewidth=line_width, label=f'${self.state_list[i].replace("T", "T_{{").replace("S", "S_{{")}}}$'.replace("_{{", "_{").replace("}}", "}") if j == xs[0] else "")
                     y_value_norm = filtered_data.loc[j, f'{state} norm_energy']
                     ax1.plot(x_positions, [y_value_norm, y_value_norm], linestyle=style, color=line_color, linewidth=line_width)
 
             # Plot total scores as a bar graph on ax3
-            rescaled_scores = sf.rescale(filtered_data['Total score'])
+            rescaled_scores = sf.rescale(filtered_data['Total Score'])
             colors = [ref_color if i == ref_idx else grade_colormap(rescaled_scores[i]) for i in range(len(xs))]
-            bars = ax3.bar(xs, filtered_data['Total score'], color=colors)
+            bars = ax3.bar(xs, filtered_data['Total Score'], color=colors)
 
-            for bar, score in zip(bars, filtered_data['Total score']):
+            for bar, score in zip(bars, filtered_data['Total Score']):
                 bar_height = bar.get_height()
 
                 # Check if the bar is too small for the font size
@@ -506,9 +553,9 @@ class Grader:
                     ha='center', va='center', color='black', fontsize=32,  rotation=90)
 
             # Plotting component scores and total score on ax2
-            ax2.plot(xs, filtered_data['AUC score'], color='r', label='AUC Score', linewidth=5, marker='8', markersize=20)
-            ax2.plot(xs, filtered_data['Time score'], color='b', label='Time Score', linewidth=5, marker='8', markersize=20)
-            ax2.plot(xs, filtered_data['Total score'], color='black', label='Total Score', linewidth=5, marker='8', markersize=20)
+            ax2.plot(xs, filtered_data['AUC Score'], color='r', label='AUC Score', linewidth=5, marker='8', markersize=20)
+            ax2.plot(xs, filtered_data['Time Score'], color='b', label='Time Score', linewidth=5, marker='8', markersize=20)
+            #ax2.plot(xs, filtered_data['Total score'], color='black', label='Total Score', linewidth=5, marker='8', markersize=20)
 
             # Add a black vertical line to separate reference from candidates
             ax0.axvline(x=ref_idx + 0.5, color='black', linewidth=4, linestyle='--')
@@ -519,11 +566,11 @@ class Grader:
             ax0.set_ylabel('Energy [eV]')
             ax1.set_ylabel('Normalized Energy [eV]')
             ax3.set_ylabel('Score')
-            ax2.set_ylabel('Component Scores and Total')
+            ax2.set_ylabel('Component Scores')
             ax2.legend()
             ax3.set_xticks(xs)
             ax3.set_xlim(-1.0, cand_number)
-            ax3.set_ylim(0.0, max(filtered_data['Total score']))
+            ax3.set_ylim(0.0, max(filtered_data['Total Score']))
             ax3.set_xticklabels(methods, rotation=90)
             ax0.legend(fontsize=20, loc='upper left', bbox_to_anchor=(1.01, 1.0))
 
@@ -535,7 +582,7 @@ class Grader:
 
     def AUC_histogram(self):
         # Get the AUC scores and filter out NaN values
-        auc_scores = self.data['AUC score'].dropna()
+        auc_scores = self.data['AUC Score'].dropna()
 
         # Filter the data again to match any relevant criteria
         filtered_data = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
@@ -561,7 +608,7 @@ class Grader:
             self.data['Method'] = self.data['Method'].apply(self.format_method_name)
 
             # Columns to export
-            columns_to_export = ['Method', 'AUC score', 'Average AUC Overlap', 'Time score', 'Run Time', 'Total score']
+            columns_to_export = ['Method', 'AUC Score', 'Weighted Min. AUC', 'Time Score', 'Run Time', 'Total Score']
             # Filter the columns to ensure they exist in DataFrame to avoid KeyError
             existing_columns = [col for col in columns_to_export if col in self.data.columns]
             # Create a string representation of the DataFrame with the selected columns
@@ -579,33 +626,35 @@ def main():
     fn = args.input_yaml
     settings = io.yload(fn)
     n_singlets = settings['reference']['singlets']
-    n_triplets = settings['reference'].get('triplets', 0)  # Default to 0 if not defined
     fol_name = fn.absolute().parents[0]
     charge = settings['general']['charge']
     geometry = settings['general']['coordinates']
     geom_file = fol_name / geometry
     mol_name = Path(geometry).stem
+    bright = settings['visuals']['countas_bright']
+    top_scores = settings['visuals']['top_scores']
     print(f"I'm reading coordinates from {geometry} and will use {settings['general']['basis']} for all the calculations.")
 
     mol = Molecule.from_xyz(geometry)
     nelec = mol.nelectrons - charge
-    results = SinglePointResults('S0min', n_singlets, n_triplets, fol_name)
+    pointname=settings['visuals']['title']
+    
+    results = SinglePointResults(pointname, n_singlets, fol_name)
     results.save_csv()
 
-    data = pd.read_csv('S0min_RAW_results.csv', index_col=0)
+    data = pd.read_csv(f'{pointname}_RAW_results.csv', index_col=0)
 
     grader = Grader(
-        pointname='S0min',
+        pointname=pointname,
         data=data,
         n_singlets=n_singlets,
-        n_triplets=n_triplets,
         ref_string='EOM-CC2',
         settings=settings
     )
 
     log_files = []
 
-    grader.time_pen()  # Calculate the time scores
+    grader.time_pen()
     grader.append_score_columns_to_df()  # Compute AUC score, Total score, etc.
     grader.make_spectra()
     grader.AUC_histogram()

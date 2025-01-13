@@ -14,7 +14,7 @@ class Plot:
     pointname: str
     data: pd.DataFrame
     n_singlets: int
-    n_triplets: int
+    #n_triplets: int
     #ref_string: str
 
     @property
@@ -22,8 +22,8 @@ class Plot:
         state_list = []
         for i in range(self.n_singlets):
             state_list.append(f'S{i}')
-        for i in range(self.n_triplets):
-            state_list.append(f'T{i+1}')
+        #for i in range(self.n_triplets):
+            #state_list.append(f'T{i+1}')
         return state_list
 
     #@property
@@ -115,12 +115,12 @@ def main():
     fn = args.input_yaml
     settings = io.yload(fn)
     n_singlets = settings['reference']['singlets']
-    n_triplets = settings['reference']['triplets']
+    #n_triplets = settings['reference']['triplets']
     fol_name = fn.absolute().parents[0]
-    results = SinglePointResults('S0min', n_singlets, n_triplets, fol_name)
+    results = SinglePointResults('S0min', n_singlets, fol_name)
     results.save_csv()
     data = pd.read_csv('S0min_RAW_results.csv', index_col=0)
-    plot = Plot('S0min', data, n_singlets, n_triplets)
+    plot = Plot('S0min', data, n_singlets)
     #scores.append_score_columns_to_df()
     plot.plot_results()
     #scores.save_csv()

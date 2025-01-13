@@ -24,13 +24,12 @@ class Excitation:
 @dataclass
 class FileParser:
     n_singlets: int
-    n_triplets: int
     hhtda_based: bool
     fn: Path
     excitation_lines: list[str] = field(default_factory=lambda: [])
 
     def parse_exc_lines_from_TC(self):
-        number_of_exc_states = self.n_singlets + self.n_triplets - 1
+        number_of_exc_states = self.n_singlets - 1
         text = 'Root   Mult.   Total Energy (a.u.)   Ex. Energy (a.u.)     Ex. Energy (eV)'
         juicy_lines = []
         with open(self.fn, "r") as f:
@@ -44,7 +43,7 @@ class FileParser:
         return
 
     def parse_nm_lines_from_TC(self):
-        number_of_exc_states = self.n_singlets + self.n_triplets - 1
+        number_of_exc_states = self.n_singlets - 1
         nm_string = '|  Root   Mult.      Ex. Wavelength (nm)'
         nm_lines = []
         with open(self.fn, "r") as f:
@@ -77,7 +76,7 @@ class FileParser:
         return
 
     def parse_osc_lines_from_TC(self):
-        number_of_exc_states = self.n_singlets + self.n_triplets - 1
+        number_of_exc_states = self.n_singlets - 1
         osc_string = 'Singlet state electronic transitions:'
         osc_lines = []
         with open(self.fn, "r") as f:
@@ -162,10 +161,9 @@ def main():
     #fn = 'casscf_AS44/tc.out'
     fn = 'hhtda_fomo_wB97x_T0.15_w0.2/tc.out'
     n_singlets = 5
-    n_triplets = 0
     #hhtda_based = False
     hhtda_based = True
-    f = FileParser(n_singlets, n_triplets, hhtda_based, fn)
+    f = FileParser(n_singlets, hhtda_based, fn)
     f.parse_TM()
     di = f.create_dict_entry()
     print(di)
