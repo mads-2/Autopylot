@@ -16,7 +16,7 @@ def read_single_arguments():
     parser.add_argument("-i", "--input_yaml", type=Path, required=True, help="Path of yaml input file")
     return parser.parse_args()
 
-def run_gradient_calculations(yaml_file, timeout=1200000, interval=10):
+def run_gradient_calculations(yaml_file, timeout=4000, interval=10):
     """Run gradient calculations for candidates in the YAML file and wait for all to complete."""
     settings = io.yload(yaml_file)
     n_singlets = settings['reference']['singlets']
@@ -86,7 +86,7 @@ def run_gradient_calculations(yaml_file, timeout=1200000, interval=10):
     failed_jobs, gradient_errors = wait_for_completion(gradient_log_files, timeout, interval)
     move_failed_jobs(failed_jobs, gradient_errors, fol_name)
 
-def wait_for_completion(log_files, timeout=1000, interval=5):
+def wait_for_completion(log_files, timeout=3500, interval=10):
     """Wait for all gradient calculations to complete or timeout, returning lists of incomplete and error jobs."""
     start_time = time.time()
     error_pattern = re.compile(r'terminated', re.IGNORECASE)  # Only checking for "terminated"
@@ -98,75 +98,68 @@ def wait_for_completion(log_files, timeout=1000, interval=5):
     def is_file_complete(file_path):
         """Check if the file has stopped growing to assume it's fully written."""
         previous_size = -1
-        while True:
+        while time.time() - start_time < timeout:
             current_size = os.path.getsize(file_path)
             if current_size == previous_size:
                 return True  # File size hasn't changed, assume complete
             previous_size = current_size
-            time.sleep(10)  # Wait and re-check size
+            time.sleep(5)  # Wait and re-check size
+        print(f"Timeout reached while waiting for file: {file_path}")
+        return False #This may break the code, I don't think ther is a handle for this currently  
 
-    while time.time() - start_time < timeout:
-        all_completed = True
-        for log_file, gradient_folder_path in log_files:
-            print(f"Checking log file: {log_file}, Folder: {gradient_folder_path}")
+    for log_file, gradient_folder_path in log_files:
+        print(f"Checking log file: {log_file}, Folder: {gradient_folder_path}")
 
-            # Ensure the directory exists before classification
-            if not gradient_folder_path.exists():
-                print(f"Directory not found for job: {gradient_folder_path}. Skipping classification.")
+        # Ensure the directory exists before classification
+        if not gradient_folder_path.exists():
+            print(f"Directory not found for job: {gradient_folder_path}. Skipping classification.")
+            continue
+
+        try:
+            # Wait until file is stable and likely complete
+            if not is_file_complete(log_file):
+                print(f"Waiting for file completion: {log_file}")
                 continue
 
-            try:
-                # Wait until file is stable and likely complete
-                if not is_file_complete(log_file):
-                    print(f"Waiting for file completion: {log_file}")
-                    continue
+            # Read file contents after ensuring stability
+            with open(log_file, 'r', encoding='utf-8') as file:
+                contents = file.read()
+                print(f"Content of {log_file}:\n{contents}\n--- End of Content ---")  # Debug output
 
-                # Read file contents after ensuring stability
-                with open(log_file, 'r', encoding='utf-8') as file:
-                    contents = file.read()
-                    print(f"Content of {log_file}:\n{contents}\n--- End of Content ---")  # Debug output
+                # Check for success markers as substrings
+                found_success_time = success_time_marker in contents
+                found_success_finish = success_finish_marker in contents
+                found_error = error_pattern.search(contents)
 
-                    # Check for success markers as substrings
-                    found_success_time = success_time_marker in contents
-                    found_success_finish = success_finish_marker in contents
-                    found_error = error_pattern.search(contents)
+                # Debugging output to track each condition's status
+                print(f"found_success_time: {found_success_time}")
+                print(f"found_success_finish: {found_success_finish}")
+                print(f"found_error: {found_error}")
 
-                    # Debugging output to track each condition's status
-                    print(f"found_success_time: {found_success_time}")
-                    print(f"found_success_finish: {found_success_finish}")
-                    print(f"found_error: {found_error}")
+                # Prioritize success: if both success markers are found, consider it successful
+                if found_success_time and found_success_finish:
+                    print(f"Job completed successfully: {gradient_folder_path}")
+                    continue  # Move to next job as this one is successful
 
-                    # Prioritize success: if both success markers are found, consider it successful
-                    if found_success_time and found_success_finish:
-                        print(f"Job completed successfully: {gradient_folder_path}")
-                        continue  # Move to next job as this one is successful
+                elif found_error:
+                    gradient_errors.append((log_file, gradient_folder_path))
+                    print(f"Job marked as error: {gradient_folder_path}")
+                    all_completed = False
+                else:
+                    # Mark as failed only if directory exists and success markers are missing
+                    failed_jobs.append((log_file, gradient_folder_path))
+                    print(f"Incomplete gradient job added to failed_jobs: {gradient_folder_path}")
+                    all_completed = False
 
-                    elif found_error:
-                        gradient_errors.append((log_file, gradient_folder_path))
-                        print(f"Job marked as error: {gradient_folder_path}")
-                        all_completed = False
-                    else:
-                        # Mark as failed only if directory exists and success markers are missing
-                        failed_jobs.append((log_file, gradient_folder_path))
-                        print(f"Incomplete gradient job added to failed_jobs: {gradient_folder_path}")
-                        all_completed = False
+        except FileNotFoundError:
+            print(f"Log file {log_file} not found, inspect cwd manually.")
+            all_completed = False  # Log file not found
 
-            except FileNotFoundError:
-                print(f"Log file {log_file} not found, waiting for it to be created.")
-                all_completed = False  # Log file not found yet, keep waiting
-
-        if all_completed:
-            print("All gradient calculations have completed or failed.")
-            break
-
-        print("Still waiting for gradient calculations to complete...")
-        time.sleep(interval)
-
-    # Debug output to confirm final classification
-    print(f"Final failed_jobs: {[path for _, path in failed_jobs]}")
-    print(f"Final gradient_errors: {[path for _, path in gradient_errors]}")
+        # Debug output to confirm final classification
+        print(f"Final failed_jobs: {[path for _, path in failed_jobs]}")
+        print(f"Final gradient_errors: {[path for _, path in gradient_errors]}")
     
-    return failed_jobs, gradient_errors
+        return failed_jobs, gradient_errors
 
 def move_failed_jobs(failed_jobs, gradient_errors, fol_name):
     """Move failed gradient jobs to failed_gradient_jobs and their respective non-gradient jobs to SPEs_of_failed_gradients."""
