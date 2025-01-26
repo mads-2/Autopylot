@@ -94,7 +94,7 @@ def write_last_frame_to_file(traj: dict, name: Path):
     save_traj(geoms, traj['atomT'], name)
 
 
-def dynamic_check_opt_status(fo, fc, stability_wait_time=240, max_wait_time=100000):
+def dynamic_check_opt_status(fo, fc, stability_wait_time=60, max_wait_time=100000):
     """
     Checks if the optimization is complete based on file size stability and convergence message.
     

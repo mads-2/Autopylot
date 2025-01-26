@@ -17,6 +17,8 @@ import os
 import re
 import shutil
 import time
+import yaml
+import subprocess
 
 pd.set_option('display.max_columns', None)
 
@@ -27,7 +29,7 @@ class Grader:
     n_singlets: int
     ref_string: str
     settings: dict
-    dft_methods_avail = ['wB97x', 'wpbe', 'wpbeh', 'camb3lyp', 'rhf', 'b3lyp', 'pbe0', 'pbe', 'bhandhlyp', 'blyp', 'pw91', 'b3pw91', 'wb97']
+    #dft_methods_avail = ['wB97x', 'wpbe', 'wpbeh', 'camb3lyp', 'rhf', 'b3lyp', 'pbe0', 'pbe', 'bhandhlyp', 'blyp', 'pw91', 'b3pw91', 'wb97']
     
     @property
     def state_list(self):
@@ -109,8 +111,8 @@ class Grader:
         else:
             time_score = {method: np.nan for method in methods}
 
-        self.data['Time Score'] = self.data['Method'].map(time_score)
-        self.data.loc[self.data['Method'] == 'EOM-CC2', 'Time Score'] = multiplier
+        self.data['Time Component'] = self.data['Method'].map(time_score)
+        self.data.loc[self.data['Method'] == 'EOM-CC2', 'Time Component'] = multiplier
 
     def suggested_alpha(self):
         ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
@@ -128,22 +130,22 @@ class Grader:
 
     def append_score_columns_to_df(self):
         methods = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
-        self.data['AUC Score'] = np.nan
-        self.data.loc[methods.index, 'AUC Score'] = self.interval_auc_overlap()
+        self.data['Overlap Component'] = np.nan
+        self.data.loc[methods.index, 'Overlap Component'] = self.interval_auc_overlap()
         self.data.loc[methods.index,'Weighted Min. AUC'] = self.auc_overlap
         
         self.data['Parent'] = self.data['Method'].str.replace('gradient','', regex=False)
         combine_scores = self.data.groupby('Parent').agg({
-            'AUC Score': 'max',
-            'Time Score': 'max',
+            'Overlap Component': 'max',
+            'Time Component': 'max',
         }).reset_index()
 
-        combine_scores['Total Score'] = combine_scores['AUC Score'].fillna(0) + combine_scores['Time Score'].fillna(0)
+        combine_scores['Final Score'] = combine_scores['Overlap Component'].fillna(0) + combine_scores['Time Component'].fillna(0)
         self.data = self.data.merge(combine_scores, on='Parent', how='left', suffixes=('',' '))
-        self.data.sort_values(by=['Total Score'], ascending=False, inplace=True, ignore_index=True)
+        self.data.sort_values(by=['Final Score'], ascending=False, inplace=True, ignore_index=True)
         
         print("Method Scores:")
-        print(self.data[['Method', 'AUC Score','Weighted Min. AUC', 'Time Score', 'Run Time', 'Total Score']])
+        print(self.data[['Method', 'Overlap Component','Weighted Min. AUC', 'Time Component', 'Run Time', 'Final Score']])
 
     def interval_auc_overlap(self):
         # Initialize auc_overlap as a class attribute
@@ -422,6 +424,8 @@ class Grader:
             active_space = active_space_match.group(1)
             if len(active_space) == 4:  # Handle two-digit active spaces like AS1210 -> (12,10)
                 formatted_active_space = f'({active_space[:2]},{active_space[2:]})'
+            elif len(active_space) == 3:
+                formatted_active_space = f'({active_space[:1]},{active_space[1:]})'
             elif len(active_space) == 2:  # Handle standard active spaces like AS86 -> (8,6)
                 formatted_active_space = f'({active_space[0]},{active_space[1]})'
             else:
@@ -461,14 +465,64 @@ class Grader:
 
         return formatted_name
 
+    def reverse_format_method_name(self, formatted_name):
+        reversed_name = formatted_name
+
+        # Handle FOMO formatting (e.g., FOMO(t₀ = 0.55) -> fomo_T0.55)
+        fomo_match = re.search(r'FOMO\(t₀\s*=\s*([\d.]+)\)', formatted_name, re.IGNORECASE)
+        if fomo_match:
+            t0_value = fomo_match.group(1)
+            reversed_name = re.sub(r'FOMO\(t₀\s*=\s*[\d.]+\)', f'', reversed_name)
+
+        # Handle CAS active space formatting (e.g., CASCI(8,7) -> casci_AS87)
+        casci_match = re.search(r'CASCI\((\d+),(\d+)\)', reversed_name, re.IGNORECASE)
+        if casci_match:
+            active_space = f"AS{casci_match.group(1)}{casci_match.group(2)}"
+            reversed_name = re.sub(r'CASCI\(\d+,\d+\)', f'casci_fomo_T{t0_value}_{active_space}', reversed_name)
+
+        casscf_match = re.search(r'CASSCF\((\d+),(\d+)\)', reversed_name, re.IGNORECASE)
+        if casscf_match:
+            active_space = f"AS{casscf_match.group(1)}{casscf_match.group(2)}"
+            reversed_name = re.sub(r'CASSCF\(\d+,\d+\)', f'casscf_{active_space}', reversed_name)
+
+        # Replace `-` with `_` for consistency with the original naming
+        reversed_name = reversed_name.replace('-', '')
+
+        # Handle additional cases, e.g., `rc_w`
+        rc_w_match = re.search(r'\(ω\s*=\s*([\d.]+)\)', reversed_name, re.IGNORECASE)
+        if rc_w_match:
+            omega_value = rc_w_match.group(1)
+            reversed_name = re.sub(r'\(ω\s*=\s*[\d.]+\)', f'', reversed_name)
+
+        # Handle hhtda formatting (e.g., hhTDA_wpbe -> hhtda_wpbe)
+        hhtda_match = re.search(r'hhTDA_(\w+)', reversed_name, re.IGNORECASE)
+        if hhtda_match:
+            functional = hhtda_match.group(1).lower()
+            reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}_T{t0_value}_w{omega_value}', reversed_name)
+
+        return reversed_name
+
     def plot_results(self):
         top_scores = self.settings['visuals'].get('top_scores', len(self.data))
         # Filter out gradient-related calculations
         filtered_data = self.data[~self.data['Method'].str.contains('gradient_', na=False)].copy()
 
         # Ensure there's valid data to plot
-        if not filtered_data.empty and 'Total Score' in filtered_data.columns and not filtered_data['Total Score'].isna().all():
-            filtered_data = filtered_data.sort_values(by='Total Score', ascending=False).head(top_scores)
+        if not filtered_data.empty and 'Final Score' in filtered_data.columns and not filtered_data['Final Score'].isna().all():
+            filtered_data = filtered_data.sort_values(by='Final Score', ascending=False).head(top_scores)
+
+            reference_method = 'EOM-CC2'
+            if reference_method in filtered_data['Method'].values:
+                # Separate reference method and other methods
+                ref_data = filtered_data[filtered_data['Method'] == reference_method]
+                other_data = filtered_data[filtered_data['Method'] != reference_method]
+
+                # Concatenate with reference first
+                filtered_data = pd.concat([ref_data, other_data])
+                filtered_data.reset_index(drop=True, inplace=True)  # Reset indices
+
+                # Update ref_idx to 0
+                ref_idx = 0
 
             ene_array = np.array([filtered_data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
             norm_ene_array = sf.normalize_energy_array(ene_array)
@@ -485,9 +539,6 @@ class Grader:
 
             filtered_data['Method'] = filtered_data['Method'].apply(self.format_method_name)
             methods = filtered_data['Method'].copy()
-
-            # Find the reference index
-            ref_idx = filtered_data[filtered_data['Method'] == 'EOM-CC2'].index[0]
 
             max_width = 150
             fig_width = min(cand_number * 2, max_width)
@@ -535,11 +586,11 @@ class Grader:
                     ax1.plot(x_positions, [y_value_norm, y_value_norm], linestyle=style, color=line_color, linewidth=line_width)
 
             # Plot total scores as a bar graph on ax3
-            rescaled_scores = sf.rescale(filtered_data['Total Score'])
+            rescaled_scores = sf.rescale(filtered_data['Final Score'])
             colors = [ref_color if i == ref_idx else grade_colormap(rescaled_scores[i]) for i in range(len(xs))]
-            bars = ax3.bar(xs, filtered_data['Total Score'], color=colors)
+            bars = ax3.bar(xs, filtered_data['Final Score'], color=colors)
 
-            for bar, score in zip(bars, filtered_data['Total Score']):
+            for bar, score in zip(bars, filtered_data['Final Score']):
                 bar_height = bar.get_height()
 
                 # Check if the bar is too small for the font size
@@ -553,8 +604,8 @@ class Grader:
                     ha='center', va='center', color='black', fontsize=32,  rotation=90)
 
             # Plotting component scores and total score on ax2
-            ax2.plot(xs, filtered_data['AUC Score'], color='r', label='AUC Score', linewidth=5, marker='8', markersize=20)
-            ax2.plot(xs, filtered_data['Time Score'], color='b', label='Time Score', linewidth=5, marker='8', markersize=20)
+            ax2.plot(xs, filtered_data['Overlap Component'], color='r', label='Overlap Component', linewidth=5, marker='8', markersize=20)
+            ax2.plot(xs, filtered_data['Time Component'], color='b', label='Time Component', linewidth=5, marker='8', markersize=20)
             #ax2.plot(xs, filtered_data['Total score'], color='black', label='Total Score', linewidth=5, marker='8', markersize=20)
 
             # Add a black vertical line to separate reference from candidates
@@ -570,7 +621,7 @@ class Grader:
             ax2.legend()
             ax3.set_xticks(xs)
             ax3.set_xlim(-1.0, cand_number)
-            ax3.set_ylim(0.0, max(filtered_data['Total Score']))
+            ax3.set_ylim(0.0, max(filtered_data['Final Score']))
             ax3.set_xticklabels(methods, rotation=90)
             ax0.legend(fontsize=20, loc='upper left', bbox_to_anchor=(1.01, 1.0))
 
@@ -582,7 +633,7 @@ class Grader:
 
     def AUC_histogram(self):
         # Get the AUC scores and filter out NaN values
-        auc_scores = self.data['AUC Score'].dropna()
+        auc_scores = self.data['Overlap Component'].dropna()
 
         # Filter the data again to match any relevant criteria
         filtered_data = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
@@ -595,11 +646,11 @@ class Grader:
 
         plt.figure(dpi=300)
         plt.hist(filtered_auc_scores, bins=20, color='green', alpha=0.7)
-        plt.xlabel('AUC Score')
+        plt.xlabel('Overlap Component')
         plt.ylabel('Frequency')
-        plt.title('Histogram of AUC Scores')
+        plt.title('Histogram of Overlap Component Values')
         plt.grid(False)
-        plt.savefig(f'{self.pointname}_AUC_histogram.png', dpi=300)
+        plt.savefig(f'{self.pointname}_overlap_histogram.png', dpi=300)
         plt.close()
 
     def export_scores_to_txt(self, filename='Final_Scores.txt'):
@@ -608,7 +659,7 @@ class Grader:
             self.data['Method'] = self.data['Method'].apply(self.format_method_name)
 
             # Columns to export
-            columns_to_export = ['Method', 'AUC Score', 'Weighted Min. AUC', 'Time Score', 'Run Time', 'Total Score']
+            columns_to_export = ['Method', 'Overlap Component', 'Weighted Min. AUC', 'Time Component', 'Run Time', 'Final Score']
             # Filter the columns to ensure they exist in DataFrame to avoid KeyError
             existing_columns = [col for col in columns_to_export if col in self.data.columns]
             # Create a string representation of the DataFrame with the selected columns
@@ -620,6 +671,129 @@ class Grader:
             print(f"Scores exported to {filename}.")
         else:
             print("No data available to export.")
+
+    def bright_state_optimization_autopilot(self, new_dir, input_yaml, geom_file):
+        settings = self.settings
+
+        if settings['grader'].get('bright_opt', 'no').lower() != 'yes':
+            print("Skipping bright state optimization")
+            return
+
+        os.makedirs(new_dir, exist_ok=True)
+
+        filtered_data = self.data[self.data['Method'] != 'EOM-CC2']
+        if filtered_data.empty or 'Final Score' not in filtered_data.columns:
+            print("No scores available to determine the highest-scoring method. Skipping bright state optimization.")
+            return
+
+        # Identify the highest-scoring method
+        top_Cand_row = filtered_data.sort_values(by='Final Score', ascending=False).iloc[0]
+        top_Cand = self.reverse_format_method_name(top_Cand_row['Method'])
+        print(f"Highest-scoring method selected for 1st bright state optimization: {top_Cand}")
+        
+        # Find the bright state target
+        bright_thresh = self.settings['visuals']['countas_bright']
+        bright_target = None
+        for i, state in enumerate(self.state_list[1:], start=1):
+            if top_Cand_row.get(f'{state} osc.', 0) >= bright_thresh:
+                bright_target = i
+                break
+
+        if bright_target is None:
+            print("No bright state found, skipping bright state optimization")
+            return
+
+        print(f"Bright state target for optimization: S{bright_target}")
+
+        if settings['grader'].get('TDDFT', 'no').lower() != 'yes':
+            print("Using top scoring Candidate method for optimization")
+
+            cwd = os.getcwd()
+
+            Cand_dir = Path(cwd) / f"{top_Cand}"
+            if not Cand_dir.exists():
+                print(f"Error: Directory for {top_Cand} not found, Skipping optimization")
+                return
+
+            settings_path = Cand_dir / 'tc.in'
+            if not settings_path.exists():
+                print(f"Error: Settings for {top_Cand} not found, Skipping optimization. Check to see if tc.in is in directory.")
+                return
+
+            settings = {}
+            with open(settings_path, 'r') as file:
+                for line in file:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        if ' ' in line:
+                            key,value = map(str.strip, line.split(maxsplit=1))
+                            settings[key] = value
+
+            with open(input_yaml , 'r') as file:
+                yaml_settings = yaml.safe_load(file)
+
+            yaml_settings['optimization'] = {
+                'method': settings.get('method', 'unknown'),
+                'basis': settings.get('basis', 'unknown'),
+                'charge': int(settings.get('charge', 0)),
+                'casscf': 'no',
+                'casci': 'no',
+                'fon': settings.get('fon', 'no'),
+                'fon_temperature': float(settings.get('fon_temperature', 0.0)),
+                'closed': int(settings.get('closed', 0)),
+                'active': int(settings.get('active', 0)),
+                'cassinglets': int(settings.get('cassinglets', 0)),
+                'gpus': int(settings.get('gpus', 1)),
+                'cphfiter': 10000
+            }
+
+            if settings.get('method', '').lower() == 'rhf':
+                if 'casscf' in top_Cand.lower():
+                    yaml_settings['optimization']['casscf'] = 'yes'
+                elif 'casci' in top_Cand.lower():
+                    yaml_settings['optimization']['casci'] = 'yes'
+
+            if settings.get('method', '').lower() in ['casscf', 'casci', 'rhf']:
+                yaml_settings['optimization']['castarget'] = bright_target
+                print(f"Optimization using CASSCF/CASCI method, castarget keyword: {yaml_settings['optimization']['castarget']}")
+            elif 'hhtda' in settings.get('method', '').lower():
+                yaml_settings['optimization']['cistarget'] = bright_target
+                print(f"HHTDA method, cistarget keyword: {yaml_settings['optimization']['cistarget']}")
+            else:
+                print(f"Unknown method type for optimization: {settings.get('method', '').lower()}. Skipping.")
+                return
+        else:
+            with open(input_yaml , 'r') as file:
+                yaml_settings = yaml.safe_load(file)
+
+            method_set = settings['optimization'].get('method', 'unknown')
+
+            yaml_settings['optimization'] = {
+                'method': method_set,
+                'gpus': int(settings.get('gpus', 1)),
+                'maxit': 1000,
+                'cis': 'yes',
+                'cistarget': bright_target,
+                'cisnumstates': bright_target
+            }
+
+        # Save new YAML and run autopilot
+        new_yaml_path = Path(new_dir) / Path(input_yaml).name
+        with open(new_yaml_path, 'w') as file:
+            yaml.dump(yaml_settings, file, default_flow_style=True)
+
+        # Copy the coordinates file to the new directory
+        coords_file = geom_file
+        if coords_file.exists():
+            new_coords_path = Path(new_dir) / coords_file.name
+            shutil.copy(coords_file, new_coords_path)
+            print(f"Coordinates file copied to: {new_coords_path}")
+        else:
+            print(f"Warning: Coordinates file {coords_file} not found. Skipping copy.")
+
+        autopilot_path = Path(__file__).parent / "autopilot.py"
+        subprocess.run(["python", str(autopilot_path), "-i", str(new_yaml_path)], cwd=new_dir)
+        print(f"autopilot.py run in {new_dir} with input {new_yaml_path}")
 
 def main():
     args = read_single_arguments()
@@ -655,7 +829,7 @@ def main():
     log_files = []
 
     grader.time_pen()
-    grader.append_score_columns_to_df()  # Compute AUC score, Total score, etc.
+    grader.append_score_columns_to_df()  # Compute AUC score, Final score, etc.
     grader.make_spectra()
     grader.AUC_histogram()
     grader.export_scores_to_txt()
@@ -663,6 +837,9 @@ def main():
     grader.plot_results()
 
     print("Final DataFrame:", grader.data)
+    
+    new_dir = fol_name / "bright_state_opt"
+    grader.bright_state_optimization_autopilot(new_dir, fn, geom_file)
 
 if __name__ == "__main__":
     main()

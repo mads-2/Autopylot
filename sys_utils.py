@@ -20,7 +20,7 @@ class JobPrepper:
     def write_sbatch_short_TC(self):
         commands = f'''#!/usr/bin/env bash
 
-#SBATCH -p volta-gpu
+#SBATCH -p l40-gpu
 #SBATCH -N 1
 #SBATCH -n 4
 #SBATCH -J cand
@@ -46,12 +46,12 @@ terachem tc.in > tc.out'''
     def write_sbatch_TURBOMOLE(self):
         commands = f'''#! /bin/bash
 
-#SBATCH -p volta-gpu
+#SBATCH -p l40-gpu
 #SBATCH -N 1
 #SBATCH -n 4
 #SBATCH -J ref
 #SBATCH --mem=32G
-#SBATCH -t 04:00:00
+#SBATCH -t 24:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1
 

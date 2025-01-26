@@ -100,7 +100,7 @@ class Candidate:
                 'cassinglets': self.n_singlets,
                 #'castriplets': self.n_triplets,
                 'gpus': '2',
-                'maxit': '1000',
+                'maxit': '10000',
                 'cphfiter': '1000'
                 }
         if self.calc_type == 'casscf':
@@ -121,7 +121,7 @@ class Candidate:
                 'cassinglets': self.n_singlets,
                 #'castriplets': self.n_triplets,
                 'gpus': '2',
-                'maxit': '1000',
+                'maxit': '10000',
                 'cphfiter': '1000'
                 }
         #if self.calc_type == 'casdft':
@@ -188,7 +188,7 @@ class Candidate:
                 'closed': 0,
                 'active': int((self.nelec/2)+1),
                 'hhtdasinglets': self.n_singlets,
-                'maxit': '1000',
+                'maxit': '10000',
                 #'hhtdatriplets': self.n_triplets,
                 'gpus': '2'
                 }

@@ -41,7 +41,7 @@ def main():
                 'threall': '1.1e-14',
                 'convthre': '1.0e-6',
                 'precision': 'mixed',
-                'maxit': '1000',
+                'maxit': '10000',
                 'gpus': '1'
         }
         calc_settings = settings['general'] | settings['optimization'] | opt_settings
