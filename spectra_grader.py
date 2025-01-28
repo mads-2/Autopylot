@@ -425,7 +425,13 @@ class Grader:
             if len(active_space) == 4:  # Handle two-digit active spaces like AS1210 -> (12,10)
                 formatted_active_space = f'({active_space[:2]},{active_space[2:]})'
             elif len(active_space) == 3:
-                formatted_active_space = f'({active_space[:1]},{active_space[1:]})'
+                if active_space[0] in ['1', '2']:
+                    first_part = int(active_space[:2])  #first two digits
+                    second_part = int(active_space[2:])  # last digit
+                else:
+                    first_part = int(active_space[:1])  # first digit
+                    second_part = int(active_space[1:])  # last two digits
+                formatted_active_space = f'({first_part},{second_part})'
             elif len(active_space) == 2:  # Handle standard active spaces like AS86 -> (8,6)
                 formatted_active_space = f'({active_space[0]},{active_space[1]})'
             else:
