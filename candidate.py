@@ -57,7 +57,8 @@ class Candidate:
     def folder_name(self):
         name = f'_{self.method}' if self.method else ""
         name += f'_T{self.fon_temperature}' if self.fon_temperature else ""
-        name += f'_w{self.rc_w}' if self.rc_w else ""
+        if self.method and self.method.lower() in ['wpbe', 'wpbeh', 'wb97']:
+            name += f'_w{self.rc_w}' if self.rc_w else ""
         name += f'_AS{self.electrons}{self.orbitals}' if self.active_space else ""
         return name
     
@@ -68,8 +69,8 @@ class Candidate:
             full_method += f'_{self.method}'
         if self.fon_temperature:
             full_method += f'_T{self.fon_temperature}'
-        if self.rc_w:
-            full_method += f'_w{self.rc_w}'
+        if self.method and self.method.lower() in ['wpbe', 'wpbeh', 'wb97']:
+            full_method += f'_w{self.rc_w}' if self.rc_w else ""
         if self.active_space:
             full_method += f'_AS{self.electrons}{self.orbitals}'
         return full_method
@@ -174,7 +175,6 @@ class Candidate:
                 'precision': 'mixed',
                 'hhtda': 'yes',
                 'method': self.method,
-                'rc_w': self.rc_w,
                 'fon': 'yes',
                 'fon_temperature': self.fon_temperature,
                 'cphftol': '1.0e-6',
@@ -192,6 +192,8 @@ class Candidate:
                 #'hhtdatriplets': self.n_triplets,
                 'gpus': '2'
                 }
+            if self.method.lower() in ['wpbe','wpbeh','wb97']:
+                 new_settings['rc_w']: self.rc_w
         return new_settings
 
 def main():
