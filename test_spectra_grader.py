@@ -161,9 +161,21 @@ class Grader:
         max_energy = 20  # Defaults for when things go wrong
 
         # Determine the energy range based on the data
-        for state in self.state_list:
-            min_energy = min(min_energy, methods[f'{state} energy'].min())
-            max_energy = max(max_energy, methods[f'{state} energy'].max())
+        # Ensure we exclude 'S0' (ground state) if present and sort the states
+        excited_states = sorted([s for s in self.state_list if s != 'S0'], key=lambda x: int(x[1:]))
+
+        # Select the first excited state for min_energy
+        if excited_states:
+            first_excited = excited_states[0]
+            min_energy = methods[f'{first_excited} energy'].min()
+
+        # Select the highest energy state for max_energy
+        if excited_states:
+            highest_excited = excited_states[-1]
+            max_energy = methods[f'{highest_excited} energy'].max()
+        
+        print(f"Min Energy: {min_energy}")
+        print(f"Max Energy: {max_energy}")
 
         # Extend the min and max range by ±2 eV
         energy_min = min_energy - 2
@@ -178,6 +190,8 @@ class Grader:
         num_points = min(1000, int(energy_range / 0.1))
         
         step_size = max(0.1, energy_range / num_points)
+
+        print(f"Step Size: {step_size}")
 
         intervals = np.linspace(energy_min, energy_max, num_points)
 
