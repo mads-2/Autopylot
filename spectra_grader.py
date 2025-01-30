@@ -157,13 +157,20 @@ class Grader:
             print("Missing energies, probalby still counting gradient calculations when it shouldn't")
             return pd.Series([np.nan] * len(self.data),index=self.data.index)
 
-        min_energy = 0
-        max_energy = 20  # Defaults for when things go wrong
+        excited_states = sorted([s for s in self.state_list if s != 'S0'], key=lambda x: int(x[1:]))
 
-        # Determine the energy range based on the data
-        for state in self.state_list:
-            min_energy = min(min_energy, methods[f'{state} energy'].min())
-            max_energy = max(max_energy, methods[f'{state} energy'].max())
+        # Select the first excited state for min_energy
+        if excited_states:
+            first_excited = excited_states[0]
+            min_energy = methods[f'{first_excited} energy'].min()
+
+        # Select the highest energy state for max_energy
+        if excited_states:
+            highest_excited = excited_states[-1]
+            max_energy = methods[f'{highest_excited} energy'].max()
+
+        print(f"Min Energy: {min_energy}")
+        print(f"Max Energy: {max_energy}")
 
         # Extend the min and max range by ±2 eV
         energy_min = min_energy - 2
@@ -171,6 +178,7 @@ class Grader:
 
         E = np.linspace(energy_min, energy_max, 5000)  # Raw energy range
         sigma = 0.15  # HWHM
+
         intervals = np.arange(energy_min, energy_max, 0.1)  # Raw energy intervals
 
         # Apply suggested alpha for each candidate, including the reference
@@ -422,8 +430,10 @@ class Grader:
         active_space_match = re.search(r'AS(\d+)', method_name)
         if active_space_match:
             active_space = active_space_match.group(1)
+            
             if len(active_space) == 4:  # Handle two-digit active spaces like AS1210 -> (12,10)
                 formatted_active_space = f'({active_space[:2]},{active_space[2:]})'
+            
             elif len(active_space) == 3:
                 if active_space[0] in ['1', '2']:
                     first_part = int(active_space[:2])  #first two digits
@@ -432,8 +442,10 @@ class Grader:
                     first_part = int(active_space[:1])  # first digit
                     second_part = int(active_space[1:])  # last two digits
                 formatted_active_space = f'({first_part},{second_part})'
+            
             elif len(active_space) == 2:  # Handle standard active spaces like AS86 -> (8,6)
                 formatted_active_space = f'({active_space[0]},{active_space[1]})'
+            
             else:
                 formatted_active_space = f'[{active_space}]'
             # Replace "AS" part
