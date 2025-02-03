@@ -106,7 +106,7 @@ class Grader:
             if min_time == max_time:
                 time_score = {method: 1.0 for method in run_times.keys()}
             else:
-                time_score = {method: (1 - ((time - min_time) / (max_time - min_time) * multiplier))
+                time_score = {method: (1 - ((time - min_time) / (max_time - min_time))) * multiplier
                               for method, time in run_times.items() if not np.isnan(time)}
         else:
             time_score = {method: np.nan for method in methods}
@@ -539,8 +539,8 @@ class Grader:
                 filtered_data = pd.concat([ref_data, other_data])
                 filtered_data.reset_index(drop=True, inplace=True)  # Reset indices
 
-                # Update ref_idx to 0
-                ref_idx = 0
+            # Update ref_idx to 0
+            ref_idx = 0
 
             ene_array = np.array([filtered_data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
             norm_ene_array = sf.normalize_energy_array(ene_array)
