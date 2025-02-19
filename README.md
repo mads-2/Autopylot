@@ -1,5 +1,5 @@
 # Autopylot Workflow Description
-### Defininton of work, and step-by-step instructions 
+### Definition of work, and step-by-step instructions 
 First, we need to create environment. Type the command: `conda env create -f environment.yml`.\
 After that, before running the package, we need to activate Autopylot environment on cluster: `ml anaconda`, following by `conda activate autopilot`.\
 There are a lot of python codes in the package we are able to use. The code `launcher.py` contains the functions calling GPU or CPU computations. Currently, only Terachem and Turbomole computations are available. Gaussian or Qchem launcher might be added in the future.\
