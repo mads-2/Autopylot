@@ -39,40 +39,75 @@ class Candidate:
     rc_w: Optional[float] = None
     active_space: Optional[list[int]] = None
 
+    # Tracks number of unique fon_temperatures per method set
+    t0_dict = {}
+
+    def __init__(self, calc_type, nelec, charge, n_singlets, method=None, fon_temperature=None, rc_w=None, active_space=None):
+        """Initialize candidate and track its FON temperature."""
+        self.calc_type = calc_type
+        self.nelec = nelec
+        self.charge = charge
+        self.n_singlets = n_singlets
+        self.method = method
+        self.fon_temperature = fon_temperature
+        self.rc_w = rc_w
+        self.active_space = active_space
+
+        if fon_temperature is not None:  
+            if calc_type not in Candidate.t0_dict:
+                Candidate.t0_dict[calc_type] = set()
+
+            if isinstance(fon_temperature, list):
+                for t0 in fon_temperature:
+                    Candidate.t0_dict[calc_type].add(float(t0))
+            else:
+                Candidate.t0_dict[calc_type].add(float(fon_temperature))
+
     @property
     def orbitals(self):
-        if self.active_space:
-            return self.active_space[1]
-        else:
-            return None
+        """Extracts the number of orbitals from active_space if available."""
+        return self.active_space[1] if self.active_space else None
 
     @property
     def electrons(self):
-        if self.active_space:
-            return self.active_space[0]
-        else:
-            return None
+        """Extracts the number of electrons from active_space if available."""
+        return self.active_space[0] if self.active_space else None
 
     @property
     def folder_name(self):
+        """Generates a folder name while omitting _T{self.fon_temperature} if only one unique value exists."""
         name = f'_{self.method}' if self.method else ""
-        name += f'_T{self.fon_temperature}' if self.fon_temperature else ""
-        if self.method and self.method.lower() in ['wpbe', 'wpbeh', 'wb97']:
+
+        if self.fon_temperature and len(Candidate.t0_dict[self.calc_type]) > 1:
+            name += f'_T{self.fon_temperature}'
+
+        rc_w_check = et(m.rc_w for m in Candidate.all_candidates if m.rc_w)
+        if self.method and self.method.lower() in ['wpbe', 'wpbeh', 'wb97'] and len(rc_w_check) > 1:
             name += f'_w{self.rc_w}' if self.rc_w else ""
-        name += f'_AS{self.electrons}{self.orbitals}' if self.active_space else ""
+
+        if self.active_space:
+            name += f'_AS{self.electrons}{self.orbitals}'
+
         return name
-    
+
     @property
     def full_method(self):
+        """Generates a full method name while omitting _T{self.fon_temperature} if only one unique value exists."""
         full_method = self.calc_type
+
         if self.method:
             full_method += f'_{self.method}'
-        if self.fon_temperature:
+
+        if self.fon_temperature and len(Candidate.t0_dict[self.calc_type]) > 1:
             full_method += f'_T{self.fon_temperature}'
-        if self.method and self.method.lower() in ['wpbe', 'wpbeh', 'wb97']:
-            full_method += f'_w{self.rc_w}' if self.rc_w else ""
+
+        rc_w_check = et(m.rc_w for m in Candidate.all_candidates if m.rc_w)
+        if self.method and self.method.lower() in ['wpbe', 'wpbeh', 'wb97'] and len(rc_w_check) > 1:
+            name += f'_w{self.rc_w}' if self.rc_w else ""
+
         if self.active_space:
             full_method += f'_AS{self.electrons}{self.orbitals}'
+
         return full_method
 
     def validate_as(self):
@@ -100,7 +135,7 @@ class Candidate:
                 'active': self.orbitals,
                 'cassinglets': self.n_singlets,
                 #'castriplets': self.n_triplets,
-                'gpus': '2',
+                'gpus': '1',
                 'maxit': '10000',
                 'cphfiter': '1000'
                 }
@@ -121,7 +156,7 @@ class Candidate:
                 'active': self.orbitals,
                 'cassinglets': self.n_singlets,
                 #'castriplets': self.n_triplets,
-                'gpus': '2',
+                'gpus': '1',
                 'maxit': '10000',
                 'cphfiter': '1000'
                 }
@@ -190,7 +225,7 @@ class Candidate:
                 'hhtdasinglets': self.n_singlets,
                 'maxit': '10000',
                 #'hhtdatriplets': self.n_triplets,
-                'gpus': '2'
+                'gpus': '1'
                 }
             if self.method.lower() in ['wpbe','wpbeh','wb97']:
                  new_settings['rc_w']: self.rc_w

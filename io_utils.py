@@ -110,7 +110,7 @@ def dynamic_check_opt_status(fo, fc, stability_wait_time=60, max_wait_time=10000
     
     # Wait until both files exist
     while not (os.path.exists(fo) and os.path.exists(fc)):
-        time.sleep(1)
+        time.sleep(5)
     
     print("Optimization files detected. Monitoring for completion...")
 
@@ -119,7 +119,7 @@ def dynamic_check_opt_status(fo, fc, stability_wait_time=60, max_wait_time=10000
 
     while True:
         file1_size = os.stat(fo).st_size
-        time.sleep(1)
+        time.sleep(30)
         file2_size = os.stat(fo).st_size
 
         # Check if file size is stable
@@ -144,7 +144,7 @@ def dynamic_check_opt_status(fo, fc, stability_wait_time=60, max_wait_time=10000
             print("Warning: File size check timed out. Proceeding as if optimization is complete.")
             return False
 
-        time.sleep(30)
+        time.sleep(1)
 
 def grep_string_in_file(search_string, file_path):
     """

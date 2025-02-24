@@ -8,6 +8,7 @@ dependencies:
   - pandas
   - pip
   - matplotlib
+  - vmd/1.9.4 
   - pip:
     - pyyaml
     - flake8

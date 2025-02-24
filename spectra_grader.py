@@ -125,7 +125,9 @@ class Grader:
             alpha_list.append(alpha_per_state)
 
             print(f"Candidate {i}: Suggested Alphas = {alpha_per_state}")
+            print()
 
+        print()
         return np.array(alpha_list)
 
     def append_score_columns_to_df(self):
@@ -146,6 +148,7 @@ class Grader:
         
         print("Method Scores:")
         print(self.data[['Method', 'Overlap Component','Weighted Min. AUC', 'Time Component', 'Run Time', 'Final Score']])
+        print()
 
     def interval_auc_overlap(self):
         # Initialize auc_overlap as a class attribute
@@ -169,8 +172,9 @@ class Grader:
             highest_excited = excited_states[-1]
             max_energy = methods[f'{highest_excited} energy'].max()
 
+        print()
         print(f"Min Energy: {min_energy}")
-        print(f"Max Energy: {max_energy}")
+        print(f"Max Energy: {max_energy}\n")
 
         # Extend the min and max range by ±2 eV
         energy_min = min_energy - 2
@@ -197,6 +201,8 @@ class Grader:
 
         # Iterate through all candidates, including the reference
         for idx, row in methods.iterrows():
+            subint_log = False
+
             # Build the candidate spectrum
             cand_spectrum = np.zeros_like(E)
             for state in range(1, self.n_singlets):
@@ -236,6 +242,16 @@ class Grader:
                         cand_segment = shifted_spectrum[mask]
                         energy_segment = E[mask]
 
+                        subint_E_size = np.diff(energy_segment)[0]
+                        num_int = len(np.diff(energy_segment))
+
+                        if not subint_log: 
+                            print("Simpson's Rule Subinterval Calculator:")
+                            print(f"Candidate: {row['Method']} Interval: 0.1")
+                            print(f"Number of subintervals:{num_int}")
+                            print(f"Subinterval size: {subint_E_size:.6f}\n")
+                            subint_log = True
+
                         # Calculate AUC for the reference and candidate within this interval
                         auc_ref = simpson(y=ref_segment, x=energy_segment)
                         auc_cand = simpson(y=cand_segment, x=energy_segment)
@@ -256,9 +272,11 @@ class Grader:
             # Calculate the average overlap across all alphas
             average_overlap = np.mean(overlap_per_candidate)
 
-            # Find the alpha with the maximum total overlap
             max_overlap_idx = np.argmax(overlap_per_candidate)
             best_overlap = overlap_per_candidate[max_overlap_idx]
+            best_alpha = alphas_for_candidates[max_overlap_idx]
+            print(f"Best alpha for {row['Method']}: S{max_overlap_idx}, Value: {best_alpha}, Overlap: {best_overlap}\n")
+
             best_intensity_differences = all_interval_differences[max_overlap_idx]
 
             # Calculate the raw penalty at the best alpha
@@ -426,6 +444,8 @@ class Grader:
             t0_value = fomo_match.group(1)
             formatted_name = re.sub(r'fomo_T\d+\.\d+', f'FOMO(t₀ = {t0_value})', formatted_name)
 
+        formatted_name = re.sub(r'fomo', 'FOMO', formatted_name, flags=re.IGNORECASE)
+
         # Handle CAS active space formatting (e.g., AS86 -> (8,6))
         active_space_match = re.search(r'AS(\d+)', method_name)
         if active_space_match:
@@ -448,8 +468,11 @@ class Grader:
             
             else:
                 formatted_active_space = f'[{active_space}]'
-            # Replace "AS" part
-            formatted_name = re.sub(r'AS\d+', f'CASSCF{formatted_active_space}', formatted_name)
+            
+            if "casci" in method_name.lower():
+                formatted_name = re.sub(r'AS\d+', f'CASCI{formatted_active_space}', formatted_name)
+            else:
+                formatted_name = re.sub(r'AS\d+', f'CASSCF{formatted_active_space}', formatted_name)
 
         if "FOMO" in formatted_name and "CASSCF" in formatted_name:
             formatted_name = formatted_name.replace("CASSCF", "CASCI")
@@ -461,10 +484,10 @@ class Grader:
         formatted_name = formatted_name.replace('_', '-')
 
         # Handle `rc_w` formatting (e.g., rc_w = 0.15 -> ω = 0.15)
-        rc_w_match = re.search(r'w(\d+.\d+)', method_name)
+        rc_w_match = re.search(r'_w(\d+\.\d+)', formatted_name)
         if rc_w_match:
             rc_w_value = rc_w_match.group(1)
-            formatted_name += f' (ω = {rc_w_value})'
+            formatted_name = re.sub(r'_w\d+\.\d+', f'(ω = {rc_w_value})', formatted_name)
 
         # Handle hhtda_fomo formatting (e.g., hhtda__wpbe_T0.15_w0.2 -> (t0=0.15)hhTDA_wPBE(ω = 0.2))
         hhtda_match = re.search(r'hhtda_(\w+)_T(\d+\.\d+)_w(\d+\.\d+)', method_name, re.IGNORECASE)
@@ -472,19 +495,21 @@ class Grader:
             functional = hhtda_match.group(1)
             t0_value = hhtda_match.group(2)
             omega_value = hhtda_match.group(3)
-            formatted_name = f'(t₀ = {t0_value})hhTDA_{functional}(ω = {omega_value})'
-
-        # Handle hhtda formatting (e.g., hhtda_wpbe_w0.2 -> hhTDA_wPBE(ω = 0.2))
-        #hhtda_match = re.search(r'hhtda_(\w+)_w(\d+\.\d+)', method_name, re.IGNORECASE)
-        #if hhtda_match:
-            #functional = hhtda_match.group(1)
-            #omega_value = hhtda_match.group(2)
-            #formatted_name = f'hhTDA_{functional}(ω = {omega_value})'
+            hhtda_formatted = f'hhTDA_{functional}'
+            if t0_value:
+                formatted_name = f'(t₀ = {t0_value})' + hhtda_formatted
+            if omega_value:
+                formatted_name += f' (ω = {omega_value})'
+        
+        formatted_name = re.sub(r'\bhhtda\b', 'hhTDA', formatted_name, flags=re.IGNORECASE)
 
         return formatted_name
 
     def reverse_format_method_name(self, formatted_name):
         reversed_name = formatted_name
+        
+        t0_value = None
+        omega_value = None
 
         # Handle FOMO formatting (e.g., FOMO(t₀ = 0.55) -> fomo_T0.55)
         fomo_match = re.search(r'FOMO\(t₀\s*=\s*([\d.]+)\)', formatted_name, re.IGNORECASE)
@@ -496,7 +521,10 @@ class Grader:
         casci_match = re.search(r'CASCI\((\d+),(\d+)\)', reversed_name, re.IGNORECASE)
         if casci_match:
             active_space = f"AS{casci_match.group(1)}{casci_match.group(2)}"
-            reversed_name = re.sub(r'CASCI\(\d+,\d+\)', f'casci_fomo_T{t0_value}_{active_space}', reversed_name)
+            if t0_value:
+                reversed_name = re.sub(r'CASCI\(\d+,\d+\)', f'casci_fomo_T{t0_value}_{active_space}', reversed_name)
+            else:
+                reversed_name = re.sub(r'CASCI\(\d+,\d+\)', f'casci_fomo_{active_space}', reversed_name)
 
         casscf_match = re.search(r'CASSCF\((\d+),(\d+)\)', reversed_name, re.IGNORECASE)
         if casscf_match:
@@ -516,7 +544,14 @@ class Grader:
         hhtda_match = re.search(r'hhTDA_(\w+)', reversed_name, re.IGNORECASE)
         if hhtda_match:
             functional = hhtda_match.group(1).lower()
-            reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}_T{t0_value}_w{omega_value}', reversed_name)
+            if t0_value and omega_value:
+                reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}_T{t0_value}_w{omega_value}', reversed_name)
+            elif t0_value:
+                reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}_T{t0_value}', reversed_name)
+            elif omega_value:
+                reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}_w{omega_value}', reversed_name)
+            else:
+                reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}', reversed_name)
 
         return reversed_name
 
@@ -674,14 +709,16 @@ class Grader:
     def export_scores_to_txt(self, filename='Final_Scores.txt'):
         self.data = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
         if not self.data.empty:
-            self.data['Method'] = self.data['Method'].apply(self.format_method_name)
+            formatted_data = self.data.copy()
+            formatted_data['Method'] = formatted_data['Method'].apply(self.format_method_name)
+            print(formatted_data[['Method']])
 
             # Columns to export
             columns_to_export = ['Method', 'Overlap Component', 'Weighted Min. AUC', 'Time Component', 'Run Time', 'Final Score']
             # Filter the columns to ensure they exist in DataFrame to avoid KeyError
-            existing_columns = [col for col in columns_to_export if col in self.data.columns]
+            existing_columns = [col for col in columns_to_export if col in formatted_data.columns]
             # Create a string representation of the DataFrame with the selected columns
-            scores_str = self.data[existing_columns].to_string(index=False, header=True)
+            scores_str = formatted_data[existing_columns].astype(str).to_string(index=False, header=True)
 
             with open(filename, 'w') as file:
                 file.write(scores_str)
@@ -693,7 +730,7 @@ class Grader:
     def bright_state_optimization_autopilot(self, new_dir, input_yaml, geom_file):
         settings = self.settings
 
-        if settings['grader'].get('bright_opt', 'no').lower() != 'yes':
+        if settings['grader']['excited_state'].get('bright_opt', 'no').lower() != 'yes':
             print("Skipping bright state optimization")
             return
 
@@ -709,111 +746,146 @@ class Grader:
         top_Cand = self.reverse_format_method_name(top_Cand_row['Method'])
         print(f"Highest-scoring method selected for 1st bright state optimization: {top_Cand}")
         
-        # Find the bright state target
-        bright_thresh = self.settings['visuals']['countas_bright']
-        bright_target = None
-        for i, state in enumerate(self.state_list[1:], start=1):
-            if top_Cand_row.get(f'{state} osc.', 0) >= bright_thresh:
-                bright_target = i
-                break
+        # Find the bright state target, options lowest E bright state or all bright states
+        what_opt = self.settings['grader']['excited_state'].get('opt_state_target', 'lowest').lower()
+        if what_opt not in ["lowest","all"]:
+            what_opt = "all"
 
-        if bright_target is None:
+        #print(f"DEBUG: Using what_opt = {what_opt}")
+
+        bright_thresh = self.settings['visuals']['countas_bright']
+        bright_targets = []
+
+        print(f"States List = {self.state_list}")
+
+        for i, state in enumerate(self.state_list[1:], start=1):
+            osc_strength = top_Cand_row.get(f'{state} osc.', 0)  
+            print(f"Checking {state}: Oscillator Strength = {osc_strength}")  
+
+            if osc_strength >= bright_thresh:
+                bright_targets.append(i)  
+                print(f"Added {state} to bright_targets")  
+
+                if what_opt == "lowest":
+                    print("Stopping at the first bright state (lowest energy over bright state cutoff, countas_bright).")
+                    break
+
+        print(f"Final bright_targets: {bright_targets}")
+
+        if not bright_targets:
             print("No bright state found, skipping bright state optimization")
             return
 
-        print(f"Bright state target for optimization: S{bright_target}")
+        print(f"Bright states selected for optimization: {', '.join([f'S{bt}' for bt in bright_targets])}")
 
-        if settings['grader'].get('TDDFT', 'no').lower() != 'yes':
-            print("Using top scoring Candidate method for optimization")
+        processes = []
 
-            cwd = os.getcwd()
+        for bright_target in bright_targets:
+            opt_dir = Path(new_dir) / f"S{bright_target}"
+            os.makedirs(opt_dir, exist_ok=True)
 
-            Cand_dir = Path(cwd) / f"{top_Cand}"
-            if not Cand_dir.exists():
-                print(f"Error: Directory for {top_Cand} not found, Skipping optimization")
-                return
-
-            settings_path = Cand_dir / 'tc.in'
-            if not settings_path.exists():
-                print(f"Error: Settings for {top_Cand} not found, Skipping optimization. Check to see if tc.in is in directory.")
-                return
-
-            settings = {}
-            with open(settings_path, 'r') as file:
-                for line in file:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        if ' ' in line:
-                            key,value = map(str.strip, line.split(maxsplit=1))
-                            settings[key] = value
-
-            with open(input_yaml , 'r') as file:
+            with open(input_yaml, 'r') as file:
                 yaml_settings = yaml.safe_load(file)
+                yaml_settings_copy = yaml_settings.copy()
+                yaml_settings_copy['optimization'] = yaml_settings_copy.get('optimization', {})
+                
+            if settings['grader']['excited_state'].get('TDDFT', 'no').lower() != 'yes':
+                print("Using top scoring Candidate method for optimization")
 
-            yaml_settings['optimization'] = {
-                'method': settings.get('method', 'unknown'),
-                'basis': settings.get('basis', 'unknown'),
-                'charge': int(settings.get('charge', 0)),
-                'casscf': 'no',
-                'casci': 'no',
-                'fon': settings.get('fon', 'no'),
-                'fon_temperature': float(settings.get('fon_temperature', 0.0)),
-                'closed': int(settings.get('closed', 0)),
-                'active': int(settings.get('active', 0)),
-                'cassinglets': int(settings.get('cassinglets', 0)),
-                'gpus': int(settings.get('gpus', 1)),
-                'cphfiter': 10000
-            }
+                cwd = os.getcwd()
 
-            if settings.get('method', '').lower() == 'rhf':
-                if 'casscf' in top_Cand.lower():
-                    yaml_settings['optimization']['casscf'] = 'yes'
-                elif 'casci' in top_Cand.lower():
-                    yaml_settings['optimization']['casci'] = 'yes'
+                Cand_dir = Path(cwd) / f"{top_Cand}"
+                if not Cand_dir.exists():
+                    print(f"Error: Directory for {top_Cand} not found, Skipping optimization")
+                    continue
 
-            if settings.get('method', '').lower() in ['casscf', 'casci', 'rhf']:
-                yaml_settings['optimization']['castarget'] = bright_target
-                print(f"Optimization using CASSCF/CASCI method, castarget keyword: {yaml_settings['optimization']['castarget']}")
-            elif 'hhtda' in settings.get('method', '').lower():
-                yaml_settings['optimization']['cistarget'] = bright_target
-                print(f"HHTDA method, cistarget keyword: {yaml_settings['optimization']['cistarget']}")
+                settings_path = Cand_dir / 'tc.in'
+                if not settings_path.exists():
+                    print(f"Error: Settings for {top_Cand} not found, Skipping optimization. Check to see if tc.in is in directory.")
+                    continue
+
+                settings = {}
+                with open(settings_path, 'r') as file:
+                    for line in file:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            if ' ' in line:
+                                key,value = map(str.strip, line.split(maxsplit=1))
+                                settings[key] = value
+
+                    aml_settings_copy['optimization'].update = ({
+                        'method': settings.get('method', 'unknown'),
+                        'basis': settings.get('basis', 'unknown'),
+                        'charge': int(settings.get('charge', 0)),
+                        'casscf': 'no',
+                        'casci': 'no',
+                        'fon': settings.get('fon', 'no'),
+                        'fon_temperature': float(settings.get('fon_temperature', 0.0)),
+                        'closed': int(settings.get('closed', 0)),
+                        'active': int(settings.get('active', 0)),
+                        'cassinglets': int(settings.get('cassinglets', 0)),
+                        'gpus': int(settings.get('gpus', 1)),
+                        'cphfiter': 10000
+                    })
+
+                    if settings.get('method', '').lower() == 'rhf':
+                        if 'casscf' in top_Cand.lower():
+                            yaml_settings_copy['optimization']['casscf'] = 'yes'
+                        elif 'casci' in top_Cand.lower():
+                            yaml_settings_copy['optimization']['casci'] = 'yes'
+
+                    if settings.get('method', '').lower() in ['casscf', 'casci', 'rhf']:
+                        yaml_settings_copy['optimization']['castarget'] = bright_target
+                        print(f"Optimization using CASSCF/CASCI method, castarget keyword: {yaml_settings['optimization']['castarget']}")
+                    elif 'hhtda' in settings.get('method', '').lower():
+                        yaml_settings_copy['optimization']['cistarget'] = bright_target
+                        print(f"HHTDA method, cistarget keyword: {yaml_settings['optimization']['cistarget']}")
+                    else:
+                        print(f"Unknown method type for optimization: {settings.get('method', '').lower()}. Skipping.")
+                        continue
             else:
-                print(f"Unknown method type for optimization: {settings.get('method', '').lower()}. Skipping.")
-                return
-        else:
-            with open(input_yaml , 'r') as file:
-                yaml_settings = yaml.safe_load(file)
+                print(f"TD-DFT for S{bright_target} optimization")
+                method_set = settings['optimization'].get('method', 'unknown')
 
-            method_set = settings['optimization'].get('method', 'unknown')
+                yaml_settings_copy['optimization'] = ({
+                    'method': method_set,
+                    'gpus': int(settings.get('gpus', 1)),
+                    'maxit': 1000,
+                    'cis': 'yes',
+                    'cistarget': bright_target,
+                    'cisnumstates': bright_target
+                })
 
-            yaml_settings['optimization'] = {
-                'method': method_set,
-                'gpus': int(settings.get('gpus', 1)),
-                'maxit': 1000,
-                'cis': 'yes',
-                'cistarget': bright_target,
-                'cisnumstates': bright_target
-            }
+            # Save new YAML and run autopilot
+            new_yaml_path = opt_dir / Path(input_yaml).name
+            with open(new_yaml_path, 'w') as file:
+                yaml.dump(yaml_settings_copy, file, default_flow_style=True)
 
-        # Save new YAML and run autopilot
-        new_yaml_path = Path(new_dir) / Path(input_yaml).name
-        with open(new_yaml_path, 'w') as file:
-            yaml.dump(yaml_settings, file, default_flow_style=True)
+            # Copy the coordinates file to the new directory
+            coords_file = Path(geom_file)
+            if coords_file.exists():
+                new_coords_path = opt_dir / coords_file.name
+                shutil.copy(coords_file, new_coords_path)
+                print(f"Coordinates file copied to: {new_coords_path}\n")
+            else:
+                print(f"Warning: Coordinates file {coords_file} not found. Skipping copy.\n")
 
-        # Copy the coordinates file to the new directory
-        coords_file = geom_file
-        if coords_file.exists():
-            new_coords_path = Path(new_dir) / coords_file.name
-            shutil.copy(coords_file, new_coords_path)
-            print(f"Coordinates file copied to: {new_coords_path}")
-        else:
-            print(f"Warning: Coordinates file {coords_file} not found. Skipping copy.")
+            log_file = opt_dir / f"autopilot_S{bright_target}.log"
+            print(f"Running autopilot.py for S{bright_target} optimization.")
+            autopilot_path = Path(__file__).parent / "autopilot.py"
 
-        autopilot_path = Path(__file__).parent / "autopilot.py"
-        subprocess.run(["python", str(autopilot_path), "-i", str(new_yaml_path)], cwd=new_dir)
-        print(f"autopilot.py run in {new_dir} with input {new_yaml_path}")
+            with open(log_file, "w") as log:
+                process = subprocess.Popen(["python", str(autopilot_path), "-i", str(new_yaml_path)], cwd=opt_dir, stdout=log, stderr=log)
+                processes.append(process)
+
+        for process in processes:
+            process.wait()
+        
+        print(f"autopilot.py run in {opt_dir} with input {new_yaml_path}")
 
 def main():
+    print("Welcome to the Absorption Spectra Grader!\n")
+
     args = read_single_arguments()
     fn = args.input_yaml
     settings = io.yload(fn)
