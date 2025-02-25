@@ -41,6 +41,7 @@ class Candidate:
 
     # Tracks number of unique fon_temperatures per method set
     t0_dict = {}
+    all_cand = []
 
     def __init__(self, calc_type, nelec, charge, n_singlets, method=None, fon_temperature=None, rc_w=None, active_space=None):
         """Initialize candidate and track its FON temperature."""
@@ -52,6 +53,8 @@ class Candidate:
         self.fon_temperature = fon_temperature
         self.rc_w = rc_w
         self.active_space = active_space
+
+        Candidate.all_cand.append(self)
 
         if fon_temperature is not None:  
             if calc_type not in Candidate.t0_dict:
@@ -81,7 +84,7 @@ class Candidate:
         if self.fon_temperature and len(Candidate.t0_dict[self.calc_type]) > 1:
             name += f'_T{self.fon_temperature}'
 
-        rc_w_check = et(m.rc_w for m in Candidate.all_candidates if m.rc_w)
+        rc_w_check = {m.rc_w for m in Candidate.all_cand if m.rc_w}
         if self.method and self.method.lower() in ['wpbe', 'wpbeh', 'wb97'] and len(rc_w_check) > 1:
             name += f'_w{self.rc_w}' if self.rc_w else ""
 
@@ -101,9 +104,9 @@ class Candidate:
         if self.fon_temperature and len(Candidate.t0_dict[self.calc_type]) > 1:
             full_method += f'_T{self.fon_temperature}'
 
-        rc_w_check = et(m.rc_w for m in Candidate.all_candidates if m.rc_w)
+        rc_w_check = {m.rc_w for m in Candidate.all_cand if m.rc_w}
         if self.method and self.method.lower() in ['wpbe', 'wpbeh', 'wb97'] and len(rc_w_check) > 1:
-            name += f'_w{self.rc_w}' if self.rc_w else ""
+            full_method += f'_w{self.rc_w}' if self.rc_w else ""
 
         if self.active_space:
             full_method += f'_AS{self.electrons}{self.orbitals}'
