@@ -14,7 +14,6 @@ def read_single_arguments():
     description_string = "This script will launch AutoPilot on a geometry"
     parser = ArgumentParser(description=description_string)
     parser.add_argument("-i", "--input_yaml", type=Path, required=True, help="Path of yaml input file")
-    # parser.add_argument("-p", "--calc_name", type=str, required=True, help="Prefix for output files (e.g. S0min for S0 minimum)")
     return parser.parse_args()
 
 def main():
@@ -44,6 +43,11 @@ def main():
                 'maxit': '10000',
                 'gpus': '1'
         }
+
+        if 'run' in settings['optimization'] and settings['optimization']['run'].lower() in ['ciopt', 'conical']:
+            print(f"Optimization explicitly set to {settings['optimization']['run']}.")
+            del opt_settings['run']
+
         calc_settings = settings['general'] | settings['optimization'] | opt_settings
         opt_path = fol_name / 'opt'
         launch_TCcalculation(opt_path, geom_file, calc_settings)

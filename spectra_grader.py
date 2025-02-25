@@ -305,7 +305,7 @@ class Grader:
 
         return pd.Series(auc_scores_normalized, index=self.data.index)
 
-    def make_spectra(self):
+    def make_spectra(self, image_type):
         min_energy = 0 #Yes, this section is repeated instead of just globalized, sorry. 
         max_energy = 20 # defaults for when things go wrong 
 
@@ -429,7 +429,7 @@ class Grader:
             plt.tight_layout()
 
             # Save the plot
-            plot_filename = os.path.join(output_dir, f'{self.pointname}_{row["Method"]}_UVVis_spectra.png')
+            plot_filename = os.path.join(output_dir, f'{self.pointname}_{row["Method"]}_UVVis_spectra.{image_type}')
             plt.savefig(plot_filename)
             plt.close()
 
@@ -555,7 +555,7 @@ class Grader:
 
         return reversed_name
 
-    def plot_results(self):
+    def plot_results(self, image_type):
         top_scores = self.settings['visuals'].get('top_scores', len(self.data))
         # Filter out gradient-related calculations
         filtered_data = self.data[~self.data['Method'].str.contains('gradient_', na=False)].copy()
@@ -576,7 +576,6 @@ class Grader:
 
             # Update ref_idx to 0
             ref_idx = 0
-
             ene_array = np.array([filtered_data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
             norm_ene_array = sf.normalize_energy_array(ene_array)
 
@@ -593,12 +592,15 @@ class Grader:
             filtered_data['Method'] = filtered_data['Method'].apply(self.format_method_name)
             methods = filtered_data['Method'].copy()
 
-            max_width = 150
-            fig_width = min(cand_number * 2, max_width)
-            fig_height = 24
-
             plt.rcParams.update({'font.size': 18})
-            fig, [ax0, ax1, ax2, ax3] = plt.subplots(4, 1, figsize=[fig_width, fig_height], sharex=True)
+        
+            istime_zero= (filtered_data['Time Component'].fillna(0) == 0).all()
+
+            num_plots = 3 if istime_zero else 4
+            fig, axes = plt.subplots(num_plots, 1, figsize=[min(len(xs) * 2, 150), 24], sharex=True)
+
+            ax0, ax1, ax3 = axes[:3]
+            ax2 = axes[2] if not istime_zero else None
 
             # Gold color for the reference in the grader axis (ax3)
             colors = [(0, 0, 1), (1, 0, 0)]  # For candidates
@@ -647,7 +649,7 @@ class Grader:
                 bar_height = bar.get_height()
 
                 # Check if the bar is too small for the font size
-                if bar_height < 0.5:  # Threshold for small bars (you can adjust this)
+                if bar_height < 0.3:  # Threshold for small bars (you can adjust this)
                     text_y_position = bar.get_y() + bar_height + 0.1  # Place text above the bar
                     ax3.text(bar.get_x() + bar.get_width() / 2, text_y_position, f'{score:.2f}', 
                     ha='center', va='bottom', color='black', fontsize=32)
@@ -656,22 +658,22 @@ class Grader:
                     ax3.text(bar.get_x() + bar.get_width() / 2, bar_height / 2, f'{score:.2f}', 
                     ha='center', va='center', color='black', fontsize=32,  rotation=90)
 
-            # Plotting component scores and total score on ax2
-            ax2.plot(xs, filtered_data['Overlap Component'], color='r', label='Overlap Component', linewidth=5, marker='8', markersize=20)
-            ax2.plot(xs, filtered_data['Time Component'], color='b', label='Time Component', linewidth=5, marker='8', markersize=20)
-            #ax2.plot(xs, filtered_data['Total score'], color='black', label='Total Score', linewidth=5, marker='8', markersize=20)
+            # Plotting component scores and total score on ax2i
+            if not istime_zero: 
+                ax2.plot(xs, filtered_data['Overlap Component'], color='r', label='Overlap Component', linewidth=5, marker='8', markersize=20)
+                ax2.plot(xs, filtered_data['Time Component'], color='b', label='Time Component', linewidth=5, marker='8', markersize=20)
+                #ax2.plot(xs, filtered_data['Total score'], color='black', label='Total Score', linewidth=5, marker='8', markersize=20)
+                ax2.set_ylabel('Component Scores')
+                ax2.legend()
+
 
             # Add a black vertical line to separate reference from candidates
-            ax0.axvline(x=ref_idx + 0.5, color='black', linewidth=4, linestyle='--')
-            ax1.axvline(x=ref_idx + 0.5, color='black', linewidth=4, linestyle='--')
-            ax2.axvline(x=ref_idx + 0.5, color='black', linewidth=4, linestyle='--')
-            ax3.axvline(x=ref_idx + 0.5, color='black', linewidth=4, linestyle='--')
+            for ax in [ax0, ax1, ax2, ax3] if not istime_zero else [ax0, ax1, ax3]:
+                ax.axvline(x=ref_idx + 0.5, color='black', linewidth=4, linestyle='--')
 
             ax0.set_ylabel('Energy [eV]')
             ax1.set_ylabel('Normalized Energy [eV]')
             ax3.set_ylabel('Score')
-            ax2.set_ylabel('Component Scores')
-            ax2.legend()
             ax3.set_xticks(xs)
             ax3.set_xlim(-1.0, cand_number)
             ax3.set_ylim(0.0, max(filtered_data['Final Score']))
@@ -680,11 +682,11 @@ class Grader:
 
             fig.tight_layout(pad=3.0)
             fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1, hspace=0, wspace=0.5)
-            fig.savefig(f'{self.pointname}_results.png', dpi=300, bbox_inches='tight')
+            fig.savefig(f'{self.pointname}_results.{image_type}', dpi=300, bbox_inches='tight')
         else:
             print("No valid data available to plot.")
 
-    def AUC_histogram(self):
+    def AUC_histogram(self, image_type):
         # Get the AUC scores and filter out NaN values
         auc_scores = self.data['Overlap Component'].dropna()
 
@@ -703,7 +705,7 @@ class Grader:
         plt.ylabel('Frequency')
         plt.title('Histogram of Overlap Component Values')
         plt.grid(False)
-        plt.savefig(f'{self.pointname}_overlap_histogram.png', dpi=300)
+        plt.savefig(f'{self.pointname}_overlap_histogram.{image_type}', dpi=300)
         plt.close()
 
     def export_scores_to_txt(self, filename='Final_Scores.txt'):
@@ -813,7 +815,7 @@ class Grader:
                                 key,value = map(str.strip, line.split(maxsplit=1))
                                 settings[key] = value
 
-                    aml_settings_copy['optimization'].update = ({
+                    yaml_settings_copy['optimization'].update({
                         'method': settings.get('method', 'unknown'),
                         'basis': settings.get('basis', 'unknown'),
                         'charge': int(settings.get('charge', 0)),
@@ -897,6 +899,7 @@ def main():
     mol_name = Path(geometry).stem
     bright = settings['visuals']['countas_bright']
     top_scores = settings['visuals']['top_scores']
+    image_type = settings['visuals'].get('image_type', 'png').lower()
     print(f"I'm reading coordinates from {geometry} and will use {settings['general']['basis']} for all the calculations.")
 
     mol = Molecule.from_xyz(geometry)
@@ -920,11 +923,11 @@ def main():
 
     grader.time_pen()
     grader.append_score_columns_to_df()  # Compute AUC score, Final score, etc.
-    grader.make_spectra()
-    grader.AUC_histogram()
+    grader.make_spectra(image_type)
+    grader.AUC_histogram(image_type)
     grader.export_scores_to_txt()
     grader.save_csv()
-    grader.plot_results()
+    grader.plot_results(image_type)
 
     print("Final DataFrame:", grader.data)
     
