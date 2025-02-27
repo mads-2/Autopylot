@@ -231,7 +231,7 @@ class Candidate:
                 'gpus': '1'
                 }
             if self.method.lower() in ['wpbe','wpbeh','wb97']:
-                 new_settings['rc_w']: self.rc_w
+                 new_settings['rc_w'] = self.rc_w
         return new_settings
 
 def main():
