@@ -483,31 +483,35 @@ class Grader:
 
         formatted_name = formatted_name.replace('_', '-')
 
-        # Handle `rc_w` formatting (e.g., rc_w = 0.15 -> ω = 0.15)
-        rc_w_match = re.search(r'_w(\d+\.\d+)', formatted_name)
-        if rc_w_match:
-            rc_w_value = rc_w_match.group(1)
-            formatted_name = re.sub(r'_w\d+\.\d+', f'(ω = {rc_w_value})', formatted_name)
+        rc_w_match = re.search(r'-w(\d+\.\d+|\d+)', formatted_name)
+        rc_w_value = rc_w_match.group(1) if rc_w_match else None
 
-        # Handle hhtda_fomo formatting (e.g., hhtda__wpbe_T0.15_w0.2 -> (t0=0.15)hhTDA_wPBE(ω = 0.2))
-        hhtda_match = re.search(r'hhtda_(\w+)_T(\d+\.\d+)_w(\d+\.\d+)', method_name, re.IGNORECASE)
+        # Handle hhTDA functional formatting
+        hhtda_match = re.search(r'hhtda-(\w+)(?:-T(\d+\.\d+))?(?:-w(\d+\.\d+))?', formatted_name, re.IGNORECASE)
         if hhtda_match:
             functional = hhtda_match.group(1)
             t0_value = hhtda_match.group(2)
             omega_value = hhtda_match.group(3)
-            hhtda_formatted = f'hhTDA_{functional}'
+
+            formatted_name = f"hhTDA-{functional}"
+
             if t0_value:
-                formatted_name = f'(t₀ = {t0_value})' + hhtda_formatted
+                formatted_name = f'(t₀ = {t0_value})' + formatted_name
+
             if omega_value:
-                formatted_name += f' (ω = {omega_value})'
-        
+                formatted_name += f'(ω = {omega_value})'
+
+        # Handle `rc_w` formatting separately if not already processed
+        if rc_w_value and '(ω =' not in formatted_name:
+            formatted_name = re.sub(r'-w' + re.escape(rc_w_value), f'(ω = {rc_w_value})', formatted_name)
+
         formatted_name = re.sub(r'\bhhtda\b', 'hhTDA', formatted_name, flags=re.IGNORECASE)
 
         return formatted_name
 
     def reverse_format_method_name(self, formatted_name):
         reversed_name = formatted_name
-        
+
         t0_value = None
         omega_value = None
 
@@ -515,7 +519,7 @@ class Grader:
         fomo_match = re.search(r'FOMO\(t₀\s*=\s*([\d.]+)\)', formatted_name, re.IGNORECASE)
         if fomo_match:
             t0_value = fomo_match.group(1)
-            reversed_name = re.sub(r'FOMO\(t₀\s*=\s*[\d.]+\)', f'', reversed_name)
+            reversed_name = re.sub(r'FOMO\(t₀\s*=\s*[\d.]+\)', '', reversed_name).strip()
 
         # Handle CAS active space formatting (e.g., CASCI(8,7) -> casci_AS87)
         casci_match = re.search(r'CASCI\((\d+),(\d+)\)', reversed_name, re.IGNORECASE)
@@ -524,34 +528,34 @@ class Grader:
             if t0_value:
                 reversed_name = re.sub(r'CASCI\(\d+,\d+\)', f'casci_fomo_T{t0_value}_{active_space}', reversed_name)
             else:
-                reversed_name = re.sub(r'CASCI\(\d+,\d+\)', f'casci_fomo_{active_space}', reversed_name)
+                reversed_name = re.sub(r'CASCI\(\d+,\d+\)', f'casci_{active_space}', reversed_name)
 
         casscf_match = re.search(r'CASSCF\((\d+),(\d+)\)', reversed_name, re.IGNORECASE)
         if casscf_match:
             active_space = f"AS{casscf_match.group(1)}{casscf_match.group(2)}"
             reversed_name = re.sub(r'CASSCF\(\d+,\d+\)', f'casscf_{active_space}', reversed_name)
 
-        # Replace `-` with `_` for consistency with the original naming
-        reversed_name = reversed_name.replace('-', '')
+        # Restore original underscores for consistency with the input naming
+        reversed_name = reversed_name.replace('-', '_')
 
-        # Handle additional cases, e.g., `rc_w`
+        # Handle `ω` (omega) value extraction
         rc_w_match = re.search(r'\(ω\s*=\s*([\d.]+)\)', reversed_name, re.IGNORECASE)
         if rc_w_match:
             omega_value = rc_w_match.group(1)
-            reversed_name = re.sub(r'\(ω\s*=\s*[\d.]+\)', f'', reversed_name)
+            reversed_name = re.sub(r'\(ω\s*=\s*[\d.]+\)', '', reversed_name).strip()
 
-        # Handle hhtda formatting (e.g., hhTDA_wpbe -> hhtda_wpbe)
-        hhtda_match = re.search(r'hhTDA_(\w+)', reversed_name, re.IGNORECASE)
+        # Handle hhTDA functional formatting (e.g., hhTDA-wPBE -> hhtda_wpbe)
+        hhtda_match = re.search(r'hhTDA-(\w+)', reversed_name, re.IGNORECASE)
         if hhtda_match:
-            functional = hhtda_match.group(1).lower()
+            functional = hhtda_match.group(1).lower()  # Convert back to lowercase
             if t0_value and omega_value:
-                reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}_T{t0_value}_w{omega_value}', reversed_name)
+                reversed_name = re.sub(r'hhTDA-\w+', f'hhtda_{functional}_T{t0_value}_w{omega_value}', reversed_name)
             elif t0_value:
-                reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}_T{t0_value}', reversed_name)
+                reversed_name = re.sub(r'hhTDA-\w+', f'hhtda_{functional}_T{t0_value}', reversed_name)
             elif omega_value:
-                reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}_w{omega_value}', reversed_name)
+                reversed_name = re.sub(r'hhTDA-\w+', f'hhtda_{functional}_w{omega_value}', reversed_name)
             else:
-                reversed_name = re.sub(r'hhTDA_\w+', f'hhtda_{functional}', reversed_name)
+                reversed_name = re.sub(r'hhTDA-\w+', f'hhtda_{functional}', reversed_name)
 
         return reversed_name
 
