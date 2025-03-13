@@ -17,7 +17,7 @@ def read_single_arguments():
     parser.add_argument("-i", "--input_yaml", type=Path, required=True, help="Path of yaml input file")
     return parser.parse_args()
 
-def run_gradient_calculations(yaml_file, timeout=4000, interval=90):
+def run_gradient_calculations(yaml_file, timeout=4000, interval=60):
     """Run gradient calculations for candidates in the YAML file and wait for all to complete."""
     settings = io.yload(yaml_file)
     n_singlets = settings['reference']['singlets']
@@ -51,37 +51,39 @@ def run_gradient_calculations(yaml_file, timeout=4000, interval=90):
 
             for candidate in completed_candidates:
                 gradient_folder_path = fol_name / f'gradient_{candidate.full_method}'
-                if not gradient_folder_path.exists():
-                    os.makedirs(gradient_folder_path, exist_ok=True)
+                os.makedirs(gradient_folder_path, exist_ok=True)
 
-                    #Filtering out excited state energy calcuation. Want only gradient. 
-                    gradient_calc_settings = candidate.calc_settings.copy()
-                    gradient_calc_settings['run'] = 'gradient'
-                    gradient_calc_settings['hhtdasinglets'] = 1
-                    gradient_calc_settings['cassinglets'] = 1
+                #Filtering out excited state energy calcuation. Want only gradient. 
+                gradient_calc_settings = candidate.calc_settings.copy()
+                gradient_calc_settings['run'] = 'gradient'
+                gradient_calc_settings['hhtdasinglets'] = 1
+                gradient_calc_settings['cassinglets'] = 1
 
-                    #Retrieve c0.casscf orbitals from appropriate files
-                    geom_name = geom_file.stem
-                    energy_calc_path = fol_name / candidate.full_method
+                #Retrieve c0 orbitals from appropriate files
+                geom_name = geom_file.stem
+                energy_calc_path = fol_name / candidate.full_method
+                if 'casscf' in candidate.full_method.lower():
                     scr_location = energy_calc_path / f"scr.{geom_name}" / 'c0.casscf'
+                elif 'casci' in candidate.full_method.lower():
+                    scr_location = energy_calc_path / f"scr.{geom_name}" / 'c0'
+                else:
+                    scr_location = None
 
-                    #Use c0.casscf orbitals in casscf gradient calculations
-                    if 'casscf' in candidate.full_method.lower():
-                        if (fol_name /scr_location).exists():
-                            gradient_calc_settings['guess'] = str(scr_location)
-                            print(f"Extracting orbitals from parent, CASSCF only: {fol_name / scr_location}")
-                        else: 
-                            gradient_calc_settings['guess'] = 'generate'
-                            print(f"No c0.casscf found for CASSCF methods, optimizing orbitals, will increase cost")
+                if scr_location and scr_location.exists():
+                    gradient_calc_settings['guess'] = str(scr_location)
+                    print(f"Extracting orbitals from parent ({candidate.full_method}): {scr_location}")
+                else:
+                    gradient_calc_settings['guess'] = 'generate'
+                    print(f"No orbitals found for {candidate.full_method}, optimizing orbitals, which may increase cost.")
 
-                    omitted = {'cisnumstates', 'cismax', 'cismaxiter', 'cisconvtol'}
-                    filtered_settings = {key: value for key, value in gradient_calc_settings.items() if key not in omitted}
+                omitted = {'cisnumstates', 'cismax', 'cismaxiter', 'cisconvtol'}
+                filtered_settings = {key: value for key, value in gradient_calc_settings.items() if key not in omitted}
 
-                    launch_TCcalculation(gradient_folder_path, geom_file, filtered_settings | settings['general'])
+                launch_TCcalculation(gradient_folder_path, geom_file, filtered_settings | settings['general'])
                 
-                # Add only valid gradient paths to gradient_log_files, with debug output
-                print(f"Adding gradient job log: {gradient_folder_path / 'tc.out'}")
-                gradient_log_files.append((gradient_folder_path / 'tc.out', gradient_folder_path))
+            # Add only valid gradient paths to gradient_log_files, with debug output
+            print(f"Adding gradient job log: {gradient_folder_path / 'tc.out'}")
+            gradient_log_files.append((gradient_folder_path / 'tc.out', gradient_folder_path))
 
     # Pass only gradient-specific log files to the wait_for_completion function
     failed_jobs, gradient_errors = wait_for_completion(gradient_log_files, timeout, interval)
@@ -150,7 +152,7 @@ def wait_for_completion(log_files, timeout, interval):
             # Read file contents after ensuring stability
             with open(log_file, 'r', encoding='utf-8') as file:
                 contents = deque(file, maxlen=10)  # Keeps only the last 10 lines in memory
-                print(f"Content of {log_file}:\n{contents}\n--- End of Content ---")  # Debug output
+                print(f"Content of {log_file}:\n{contents}\n--- End of Content ---\n")  # Debug output
 
                 # Check for success markers as substrings
                 found_success_time = any(success_time_marker in line for line in contents)
@@ -160,7 +162,7 @@ def wait_for_completion(log_files, timeout, interval):
                 # Debugging output to track each condition's status
                 print(f"found_success_time: {found_success_time}")
                 print(f"found_success_finish: {found_success_finish}")
-                print(f"found_error: {found_error}")
+                print(f"found_error: {found_error}\n")
 
                 # Prioritize success: if both success markers are found, consider it successful
                 if found_success_time and found_success_finish:

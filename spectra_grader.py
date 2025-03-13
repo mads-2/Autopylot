@@ -59,7 +59,7 @@ class Grader:
         
             # Save the CSV file
             filtered_data.to_csv(f'{self.pointname}_results.csv', index=False)
-            print(f"CSV saved successfully as {self.pointname}_results.csv")
+            print(f"CSV saved successfully as {self.pointname}_results.csv \n")
     
         except Exception as e:
             print(f"Error in `save_csv`: {e}")
@@ -132,22 +132,34 @@ class Grader:
 
     def append_score_columns_to_df(self):
         methods = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
-        self.data['Overlap Component'] = np.nan
-        self.data.loc[methods.index, 'Overlap Component'] = self.interval_auc_overlap()
-        self.data.loc[methods.index,'Weighted Min. AUC'] = self.auc_overlap
+        self.data['Normalized Autopylot Component'] = np.nan
+        self.data['Overlap'] = np.nan
+        self.data['Spectra Penalty'] = np.nan
+        self.data['RMSD Penalty'] = np.nan
+
+        self.data.loc[methods.index, 'Normalized Autopylot Component'] = self.interval_auc_overlap()
+        self.data.loc[methods.index,'Raw Autopylot Score'] = self.auc_overlap
+        self.data.loc[methods.index, 'Overlap'] = self.best_overlaps
+
+        print(f"Length of methods.index: {len(methods.index)}")
+        print(f"Length of self.abs_penalties: {len(self.abs_penalties)}")
+        print(f"Length of self.e_penalties: {len(self.e_penalties)}")
+
+        self.data.loc[methods.index, 'Spectra Penalty'] = self.abs_penalties
+        self.data.loc[methods.index, 'Rel. Energy Penalty'] = self.e_penalties
         
         self.data['Parent'] = self.data['Method'].str.replace('gradient','', regex=False)
         combine_scores = self.data.groupby('Parent').agg({
-            'Overlap Component': 'max',
+            'Normalized Autopylot Component': 'max',
             'Time Component': 'max',
         }).reset_index()
 
-        combine_scores['Final Score'] = combine_scores['Overlap Component'].fillna(0) + combine_scores['Time Component'].fillna(0)
+        combine_scores['Final Score'] = combine_scores['Normalized Autopylot Component'].fillna(0) + combine_scores['Time Component'].fillna(0)
         self.data = self.data.merge(combine_scores, on='Parent', how='left', suffixes=('',' '))
         self.data.sort_values(by=['Final Score'], ascending=False, inplace=True, ignore_index=True)
         
         print("Method Scores:")
-        print(self.data[['Method', 'Overlap Component','Weighted Min. AUC', 'Time Component', 'Run Time', 'Final Score']])
+        print(self.data[['Method', 'Normalized Autopylot Component', 'Raw Autopylot Score','Overlap', 'Spectra Penalty', 'Rel. Energy Penalty', 'Time Component', 'Run Time', 'Final Score']])
         print()
 
     def interval_auc_overlap(self):
@@ -199,8 +211,17 @@ class Grader:
                 osc_value = ref_row[osc_col]
                 ref_spectrum += self.gauss(E, osc_value, x0, sigma)
 
+        rmsd_scores, _ = self.RMSD_pen()
+        
+        self.best_overlaps = []
+        self.abs_penalties = []
+        self.e_penalties = []
+
         # Iterate through all candidates, including the reference
-        for idx, row in methods.iterrows():
+        for idx, (i, row) in enumerate(self.data.iterrows()):
+            overlap_per_candidate = []
+            all_interval_differences = []
+
             subint_log = False
 
             # Build the candidate spectrum
@@ -213,10 +234,8 @@ class Grader:
                     osc_value = row[osc_col]
                     cand_spectrum += self.gauss(E, osc_value, x0, sigma)
 
-            alphas_for_candidates = suggested_alphas[idx]
-            overlap_per_candidate = []
-            all_interval_differences = []
-
+            alphas_for_candidates = suggested_alphas[i]
+            
             # Calculate total overlaps and AUC differences for each alpha
             for alpha in alphas_for_candidates:
                 shifted_spectrum = np.copy(cand_spectrum)
@@ -246,7 +265,7 @@ class Grader:
                         num_int = len(np.diff(energy_segment))
 
                         if not subint_log: 
-                            print("Simpson's Rule Subinterval Calculator:")
+                            print("\nSimpson's Rule Subinterval Calculator:")
                             print(f"Candidate: {row['Method']} Interval: 0.1")
                             print(f"Number of subintervals:{num_int}")
                             print(f"Subinterval size: {subint_E_size:.6f}\n")
@@ -269,23 +288,27 @@ class Grader:
                 overlap_per_candidate.append(overlap_total)
                 all_interval_differences.append(interval_differences)
 
-            # Calculate the average overlap across all alphas
-            average_overlap = np.mean(overlap_per_candidate)
-
             max_overlap_idx = np.argmax(overlap_per_candidate)
             best_overlap = overlap_per_candidate[max_overlap_idx]
             best_alpha = alphas_for_candidates[max_overlap_idx]
-            print(f"Best alpha for {row['Method']}: S{max_overlap_idx}, Value: {best_alpha}, Overlap: {best_overlap}\n")
+            print(f"Best alpha for {row['Method']}: S{max_overlap_idx}, Alpha: {best_alpha}, Overlap: {best_overlap}\n")
 
             best_intensity_differences = all_interval_differences[max_overlap_idx]
 
             # Calculate the raw penalty at the best alpha
-            penalty = sum(best_intensity_differences)
+            abs_penalty = sum(best_intensity_differences)
+            print(f"\nTotal Intensity Difference for {row['Method']} (Best Alpha: {best_alpha}): {abs_penalty:.6f}")
+
+            e_penalty = rmsd_scores[i]
+
+            self.best_overlaps.append(best_overlap)
+            self.abs_penalties.append(abs_penalty)
+            self.e_penalties.append(e_penalty)
 
             # Adjust the average overlap by subtracting the penalty
-            adjusted_score = average_overlap - penalty
+            adjusted_score = (best_overlap - abs_penalty) - e_penalty
             self.auc_overlap.append(adjusted_score)  # Append adjusted score to the class attribute
-
+        
         # Normalize the scores
         non_eom_overlaps = [
             x for i, x in enumerate(self.auc_overlap) if methods.iloc[i]["Method"] != "EOM-CC2"
@@ -304,6 +327,53 @@ class Grader:
                     auc_scores_normalized.append((overlap - min_overlap) / (max_overlap - min_overlap))
 
         return pd.Series(auc_scores_normalized, index=self.data.index)
+
+    def RMSD_pen(self):
+        ene_array = np.array([self.data[x] for x in [f'{x} energy' for x in self.state_list]]).transpose()
+        norm_ene_array = sf.normalize_energy_array(ene_array)
+        
+        ref_norm_ene = norm_ene_array[self.ref_ind]
+        rmsd_scores = np.sqrt(np.mean((ref_norm_ene - norm_ene_array) ** 2, axis=1))
+
+        print("\nRMSD Scores:")
+        for i, method in enumerate(self.data['Method']):
+            print(f"{method}: {rmsd_scores[i]:.4f}\n")
+
+        return rmsd_scores, norm_ene_array
+
+    def energy_RMSD_plot(self, image_type, output_dir='energy_score_plots'):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        rmsd_scores, norm_ene_array = self.RMSD_pen()
+        ref_norm_ene = norm_ene_array[self.ref_ind]
+
+        if norm_ene_array.size == 0:
+            print("Normalized energy array is empty. Check your data inputs.")
+            return
+
+        for i, method in enumerate(self.data['Method']):
+            if i == self.ref_ind:
+                continue # avoids plotting reference to itself
+
+            try:
+                formatted_method_name = self.format_method_name(method)
+                plt.figure(dpi=300)
+                plt.scatter(ref_norm_ene, norm_ene_array[i], label='Data')
+                plt.plot([0, 1], [0, 1], color='red', label='y=x')
+                plt.xlabel('EOM-CC2 Energies')
+                plt.ylabel(f'{formatted_method_name} Energies')
+                #plt.title(f'Linear Regression: Reference vs {method}')
+                plt.text(0.05, 0.95, f'RMSD = {rmsd_scores[i]:.2f}', transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
+
+                plot_filename = f'{self.pointname}_{method}_RMSD.{image_type}'
+                plt.savefig(os.path.join(output_dir, plot_filename))
+                plt.close()
+                print(f"Saved RMSD plot for {method} in {output_dir} \n")
+
+            except Exception as e:
+                print(f"Failed to generate or save RMSD plot for {method}. Error: {e}")
+                plt.close()
 
     def make_spectra(self, image_type):
         min_energy = 0 #Yes, this section is repeated instead of just globalized, sorry. 
@@ -664,7 +734,7 @@ class Grader:
 
             # Plotting component scores and total score on ax2i
             if not istime_zero: 
-                ax2.plot(xs, filtered_data['Overlap Component'], color='r', label='Overlap Component', linewidth=5, marker='8', markersize=20)
+                ax2.plot(xs, filtered_data['Normalized Autopylot Component'], color='r', label='Normalized Autopylot Component', linewidth=5, marker='8', markersize=20)
                 ax2.plot(xs, filtered_data['Time Component'], color='b', label='Time Component', linewidth=5, marker='8', markersize=20)
                 #ax2.plot(xs, filtered_data['Total score'], color='black', label='Total Score', linewidth=5, marker='8', markersize=20)
                 ax2.set_ylabel('Component Scores')
@@ -692,7 +762,7 @@ class Grader:
 
     def AUC_histogram(self, image_type):
         # Get the AUC scores and filter out NaN values
-        auc_scores = self.data['Overlap Component'].dropna()
+        auc_scores = self.data['Normalized Autopylot Component'].dropna()
 
         # Filter the data again to match any relevant criteria
         filtered_data = self.data[~self.data['Method'].str.contains('gradient_', na=False)]
@@ -705,9 +775,9 @@ class Grader:
 
         plt.figure(dpi=300)
         plt.hist(filtered_auc_scores, bins=20, color='green', alpha=0.7)
-        plt.xlabel('Overlap Component')
+        plt.xlabel('Normalized Autopylot Component')
         plt.ylabel('Frequency')
-        plt.title('Histogram of Overlap Component Values')
+        plt.title('Histogram of Noramlized Autopylot Component Values')
         plt.grid(False)
         plt.savefig(f'{self.pointname}_overlap_histogram.{image_type}', dpi=300)
         plt.close()
@@ -720,16 +790,18 @@ class Grader:
             print(formatted_data[['Method']])
 
             # Columns to export
-            columns_to_export = ['Method', 'Overlap Component', 'Weighted Min. AUC', 'Time Component', 'Run Time', 'Final Score']
+            columns_to_export = ['Method', 'Normalized Autopylot Component', 'Raw Autopylot Score','Overlap', 'Spectra Penalty', 'Rel. Energy Penalty', 'Time Component', 'Run Time', 'Final Score']
             # Filter the columns to ensure they exist in DataFrame to avoid KeyError
-            existing_columns = [col for col in columns_to_export if col in formatted_data.columns]
+            #existing_columns = [col for col in columns_to_export if col in formatted_data.columns]
+            formatted_data[columns_to_export] = formatted_data[columns_to_export].round(4)
+
             # Create a string representation of the DataFrame with the selected columns
-            scores_str = formatted_data[existing_columns].astype(str).to_string(index=False, header=True)
+            scores_str = formatted_data[columns_to_export].astype(str).to_string(index=False, header=True)
 
             with open(filename, 'w') as file:
                 file.write(scores_str)
 
-            print(f"Scores exported to {filename}.")
+            print(f"\n Scores exported to {filename}.")
         else:
             print("No data available to export.")
 
@@ -737,7 +809,7 @@ class Grader:
         settings = self.settings
 
         if settings['grader']['excited_state'].get('bright_opt', 'no').lower() != 'yes':
-            print("Skipping bright state optimization")
+            print("\n Skipping bright state optimization")
             return
 
         os.makedirs(new_dir, exist_ok=True)
@@ -904,7 +976,6 @@ def main():
     bright = settings['visuals']['countas_bright']
     top_scores = settings['visuals']['top_scores']
     image_type = settings['visuals'].get('image_type', 'png').lower()
-    print(f"I'm reading coordinates from {geometry} and will use {settings['general']['basis']} for all the calculations.")
 
     mol = Molecule.from_xyz(geometry)
     nelec = mol.nelectrons - charge
@@ -929,6 +1000,7 @@ def main():
     grader.append_score_columns_to_df()  # Compute AUC score, Final score, etc.
     grader.make_spectra(image_type)
     grader.AUC_histogram(image_type)
+    grader.energy_RMSD_plot(image_type)
     grader.export_scores_to_txt()
     grader.save_csv()
     grader.plot_results(image_type)
