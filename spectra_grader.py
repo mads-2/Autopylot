@@ -961,6 +961,49 @@ class Grader:
         
         print(f"autopilot.py run in {opt_dir} with input {new_yaml_path}")
 
+    def grouping(self):
+        if self.settings['visuals'].get('grouping', 'no').lower() != 'yes':
+            print("Grouping hhTDA and FOMO-CASCI methods with same DFT Method and AS respectively.")
+            return
+
+        self.data.columns = self.data.columns.str.strip()
+        self.data = self.data.loc[:, ~self.data.columns.duplicated()]
+        data_copy = self.data.copy()
+
+        ungrouped = data_copy[~data_copy['Method'].str.contains('casci_fomo|hhtda', case=False, na=False)].copy()
+
+        #Separate CASCI-FOMO and hhTDA candidates
+        casci_cand = data_copy[data_copy['Method'].str.contains('casci_fomo', case=False, na=False)].copy()
+        hhtda_cand = data_copy[data_copy['Method'].str.contains('hhtda', case=False, na=False)].copy()
+
+        #Group CASCI-FOMO by Active Space (AS)
+        casci_cand['AS_Group'] = casci_cand['Method'].str.extract(r'AS(\d+)')
+        casci_cand.dropna(subset=['AS_Group'], inplace=True)
+        casci_cand['AS_Group'] = casci_cand['AS_Group'].astype(str)
+
+        if not casci_cand.empty:
+            casci_cand = casci_cand.loc[casci_cand.groupby('AS_Group')['Final Score'].idxmax().dropna()].reset_index(drop=True)
+
+        #Group hhTDA by DFT method**
+        hhtda_cand['DFT_Group'] = hhtda_cand['Method'].str.extract(r'hhtda_([\w]+)')
+        hhtda_cand.dropna(subset=['DFT_Group'], inplace=True)
+        hhtda_cand['DFT_Group'] = hhtda_cand['DFT_Group'].astype(str)
+
+        if not hhtda_cand.empty:
+            hhtda_cand = hhtda_cand.loc[hhtda_cand.groupby('DFT_Group')['Final Score'].idxmax().dropna()].reset_index(drop=True)
+
+        #Column alignment
+        all_columns = self.data.columns
+        casci_cand = casci_cand.reindex(columns=all_columns, fill_value=np.nan)
+        hhtda_cand = hhtda_cand.reindex(columns=all_columns, fill_value=np.nan)
+        ungrouped = ungrouped.reindex(columns=all_columns, fill_value=np.nan)
+
+        #Add the grouped candidates with ungrouped ones
+        self.data = pd.concat([casci_cand, hhtda_cand, ungrouped], ignore_index=True, sort=False).reset_index(drop=True)
+        self.data.sort_values(by='Final Score', ascending=False, inplace=True, ignore_index=True)
+
+        print("Grouping complete: Only the highest-scoring candidates retained per group. See output for all Cand Scores.")
+
 def main():
     print("Welcome to the Absorption Spectra Grader!\n")
 
@@ -998,6 +1041,8 @@ def main():
 
     grader.time_pen()
     grader.append_score_columns_to_df()  # Compute AUC score, Final score, etc.
+    #print("Columns in DataFrame:", grader.data.columns.tolist())
+    grader.grouping()
     grader.make_spectra(image_type)
     grader.AUC_histogram(image_type)
     grader.energy_RMSD_plot(image_type)
