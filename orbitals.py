@@ -114,7 +114,7 @@ def generate_vmd_script(vmd_file, scr_dir, molden_file, orbital_range, dir_name,
         vmd_script.write("mol addrep 0  \n")
         vmd_script.write("mol modstyle 0 0 DynamicBonds 1.600000 0.100000 12.000000 \n")
         vmd_script.write("mol modcolor 0 0 Element  \n")
-        vmd_script.write("rotate x by 90 \n")
+        vmd_script.write("rotate x by 85 \n")
 
         for orbital in orbital_range:
             label = orbital_labels(dir_name, orbital, closed, active)

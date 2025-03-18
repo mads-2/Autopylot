@@ -29,13 +29,16 @@ def subprocess_casci(folder_path, geom_file, settings):
     )
     return process
 
-def casci_c0(fol_name, candidate, geom_file):
-    geom_name = geom_file.stem
-    energy_calc_path = fol_name / candidate.full_method
-    if 'casci' in candidate.full_method.lower():
-        scr_location = energy_calc_path / f"scr.{geom_name}" / 'c0'
-        return scr_location if scr_location.exists() else None
-    return None
+def casci_c0(fol_path, mol_name):
+    scr_location = fol_path / f"scr.{mol_name}" / "c0"
+    print(f"Checking for c0 file at: {scr_location}")
+
+    if scr_location.exists():
+        print(f"Found c0 file at {scr_location}")
+        return scr_location
+    else:
+        print(f"No c0 file found at {scr_location}")
+        return None
 
 def main():
     args = read_single_arguments()
@@ -87,7 +90,8 @@ def main():
     print("\nI will use the EOM-CC2 as a reference. Launching calculation now. This one might take a while to finish!")
     launch_TMcalculation(fol_name / 'eom', geom_file, n_singlets-2)
 
-    casci_groups = {}
+    #Group all FOMO-CASCI and CASSCF methods
+    cas_group = {}
 
     if settings['candidates']:
         for calc_type in settings['candidates']:
@@ -102,31 +106,39 @@ def main():
             candidates_list = CandidateListGenerator(**case_settings).create_candidate_list()
 
             for candidate in candidates_list:
-                folder_path = fol_name / f'{calc_type}{candidate.folder_name}'
-
-                if 'casci' in candidate.full_method.lower():
-                    method_search = candidate.full_method.split('_')
-                    AS = next((part for part in method_search if part.startswith('AS')), None)
+                print(f"DEBUG: Creating directory for {candidate.full_method}")
+                folder_path = fol_name / candidate.full_method
+                
+                if 'casci_fomo' in candidate.full_method.lower() or 'casscf' in candidate.full_method.lower():
+                    method_parts = candidate.full_method.split('_')
+                    AS = next((part for part in method_parts if part.startswith('AS')), None)
                     if AS:
-                        casci_groups.setdefault((calc_type, AS), []).append((candidate, folder_path))
-                    continue
+                        cas_group.setdefault(AS, []).append((candidate, folder_path))
+
+    print("\nFiltered CASCI and CASSCF groups:", cas_group.keys())
 
     casci_firstjobs = {}
     casci_firstlogs = []
-    batch_casci = {}
+    batch_cas = {}
     other_jobs = {}
     all_calcs_logs = []
+    first_c0 = {}
     
-    #run CASCI first so that we can read in orbitals if different fon temperatures. 
-    if casci_groups:
-        for (calc_type, AS), candidates in casci_groups.items():
-            print(f"\nProcessing CASCI {calc_type} calculations for {AS}")
+    #run CASCI first so that we can read in orbitals. 
+    if cas_group:
+        for AS, candidates in cas_group.items():
+            print(f"\nProcessing CASCI/CASSCF calculations for {AS}")
 
-            multi_fon = any('_T0.' in candidate.full_method for candidate, _ in candidates)
+            casci_candidates = [c for c, _ in candidates if 'casci_fomo' in c.full_method.lower() and 'casci' in c.full_method.lower()]
 
-            if multi_fon:
-                candidates.sort(key=lambda x: float(x[0].full_method.split('_T0.')[1].split('_')[0]))
-                first_candidate, first_fol = candidates[0]
+            if casci_candidates:
+                casci_candidates = sorted(
+                    [c for c, _ in candidates if 'casci_fomo' in c.full_method.lower()],
+                    key=lambda c: float(c.full_method.split('_T0.')[1].split('_')[0]) if '_T0.' in c.full_method else float('inf')
+    )
+                first_candidate = casci_candidates[0]
+                first_fol = fol_name / first_candidate.full_method
+
                 print(f"\nLaunching first CASCI calculation: {first_candidate.full_method}")
 
                 os.makedirs(first_fol, exist_ok=True)
@@ -137,48 +149,72 @@ def main():
                 casci_firstlogs.append((first_fol / 'tc.out', first_fol))
 
             else:
-                print(f"\nOnly one FON temperature detected for {AS}. Submitting all CASCI jobs normally.")
+                print(f"\nOnly CASSCF found for {AS}. Submitting all calculations normally.")
                 for candidate, folder_path in candidates:
                     os.makedirs(folder_path, exist_ok=True)
                     candidate_settings = {**settings['general'], **candidate.calc_settings}
-
-                    print(f"\nSubmitting CASCI calculation: {candidate.full_method}")
+                    print(f"\nSubmitting CASSCF calculation: {candidate.full_method}")
                     launch_TCcalculation(folder_path, geom_file, candidate_settings)
-                    batch_casci[folder_path] = subprocess_casci(folder_path, geom_file, candidate_settings)
+                    batch_cas[folder_path] = subprocess_casci(folder_path, geom_file, candidate_settings)
 
         if casci_firstjobs:
             for folder_path, process in casci_firstjobs.items():
                 process.wait()
 
         if casci_firstlogs:
-            wait_for_completion_wrap(casci_firstlogs, timeout=3600, interval=45)
+            wait_for_completion_wrap(casci_firstlogs, timeout=3600, interval=60)
 
-    #Submit the rest of the CASCI calcs with the c0 from the frist one, per AS
-    for (calc_type, AS), candidates in casci_groups.items():
-        first_candidate, first_fol = candidates[0]
-        first_c0_path = casci_c0(fol_name, first_candidate, geom_file)
-            
-        if first_c0_path:
-            print(f"\nUsing {first_c0_path} as a guess for subsequent calculations.")
-
-        if len(candidates) == 1:
-            print(f"\nOnly one CASCI calculation exists for {AS}: {first_candidate.full_method}. No batch submission needed.")
+    #Submit the rest of the CASCI and CASSCF calcs with the c0 from the first CASCI calculation, per AS
+    for AS, candidates in cas_group.items():
+        print(f"\nProcessing calculations for {AS}")
+        casci_candidates = [c for c, _ in candidates if 'casci_fomo' in c.full_method.lower()]
+    
+        if not casci_candidates:
+            print(f"No CASCI-FOMO calculations found for {AS}. Skipping AS.")
             continue
 
-        for candidate, folder_path in candidates[1:]:
+        casci_candidates.sort(
+            key=lambda c: float(c.full_method.split('_T0.')[1].split('_')[0]) if '_T0.' in c.full_method else float('inf')
+        )
+
+        first_candidate, first_fol = next(((c, f) for c, f in candidates if c == casci_candidates[0]), (None, None))
+        
+        if first_candidate and first_fol:
+            first_c0_path = casci_c0(first_fol, mol_name)
+
+            if first_c0_path:
+                first_c0[AS] = first_c0_path
+                print(f"\nUsing {first_c0_path} as a guess for subsequent calculations in {AS}.")
+            else:
+                print(f"\nNo CASCI c0 found for {AS}. Skipping guess assignment.")
+
+        # Now apply the c0 to all other calculations in this AS
+        for candidate, folder_path in candidates:
             os.makedirs(folder_path, exist_ok=True)
             candidate_settings = {**settings['general'], **candidate.calc_settings}
-            if first_c0_path:
-                candidate_settings['guess'] = str(first_c0_path)
 
-            print(f"\nSubmitting CASCI calculation with guess: {candidate.full_method}")
+            # Only apply the c0 guess if it's not the first CASCI calculation
+            if candidate == casci_candidates[0]:
+                print(f"\n Avoding Resubmission of {candidate.full_method}")
+                continue
+        
+            if AS in first_c0:
+                candidate_settings['guess'] = str(first_c0[AS])
+                print(f"\nAssigned c0 guess from {first_c0[AS]} to {candidate.full_method} in {AS}.")
+            else:
+                print(f"\nSkipping guess for {candidate.full_method} in {AS}.")
+
+            print(f"\nSubmitting calculation for: {candidate.full_method}")
             launch_TCcalculation(folder_path, geom_file, candidate_settings)
-            batch_casci[folder_path] = subprocess_casci(folder_path, geom_file, candidate_settings)
-            print("\nFirst CASCI calculations completed.")
+            batch_cas[folder_path] = subprocess_casci(folder_path, geom_file, candidate_settings)
 
-    #Now run CASSCF and hhTDA
+            all_calcs_logs.append((folder_path / 'tc.out', folder_path))
+
+    print("\nFirst CASCI calculations completed.")
+
+    #Now runhhTDA and any CASCF that didnt have a CASCI of the same AS
     for calc_type in settings['candidates']:
-        print(f"\nNow launching {calc_type} calculations.")
+        print(f"\n***Now launching remaining calculations.***")
 
         vee_settings = {
             'charge': charge,
@@ -190,17 +226,17 @@ def main():
         candidates_list = CandidateListGenerator(**case_settings).create_candidate_list()
 
         for candidate in candidates_list:
-            folder_path = fol_name / f'{calc_type}{candidate.folder_name}'
+            folder_path = fol_name / f"{candidate.full_method}"
             os.makedirs(folder_path, exist_ok=True)
 
             candidate_settings = {**settings['general'], **candidate.calc_settings}
 
-            if 'casci' not in candidate.full_method.lower():
+            if 'casci_fomo' not in candidate.full_method.lower() and 'casscf' not in candidate.full_method.lower():
                 launch_TCcalculation(folder_path, geom_file, {**settings['general'], **candidate.calc_settings})
                 other_jobs[folder_path] = subprocess_casci(folder_path, geom_file, candidate_settings)
                 all_calcs_logs.append((folder_path / 'tc.out', folder_path))
 
-    all_calcs = list(batch_casci.values()) + list(other_jobs.values())
+    all_calcs = list(batch_cas.values()) + list(other_jobs.values())
 
     for process in all_calcs:
         process.wait()
@@ -208,11 +244,11 @@ def main():
     print("\nAll Calculations Submitted\n")
 
     if all_calcs_logs:
-        print("\nWaiting for all calculation to complete...")
-        wait_for_completion_wrap(all_calcs_logs, timeout=3600, interval=45)
+        print("\nWaiting for all calculation to complete.")
+        wait_for_completion_wrap(all_calcs_logs, timeout=3600, interval=60)
         print("\nAll calculations logs processed. Ready to launch orbitals.py.")
 
-    print(f"\nLaunching orbitals.py with {fn} as input...")
+    print(f"\nLaunching orbitals.py with {fn} as input.")
     subprocess.run(["python3", str(Path(__file__).parent / "orbitals.py"), "-i", str(fn)])
     print("\norbitals.py execution finished.")
 

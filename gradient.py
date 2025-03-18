@@ -175,14 +175,14 @@ def wait_for_completion(log_files, timeout, interval):
                 else:
                     # Mark as failed only if directory exists and success markers are missing
                     failed_jobs.append((log_file, gradient_folder_path))
-                    print(f"Incomplete gradient job added to failed_jobs: {gradient_folder_path}")
+                    print(f"Incomplete job added to failed_jobs: {gradient_folder_path}")
 
         except FileNotFoundError:
             print(f"Log file {log_file} not found, inspect cwd manually.")
 
     # Debug output to confirm final classification
     print(f"Final failed_jobs: {[path for _, path in failed_jobs]}")
-    print(f"Final gradient_errors: {[path for _, path in gradient_errors]}")
+    print(f"Final calculation_errors: {[path for _, path in gradient_errors]}")
     
     return failed_jobs, gradient_errors
 
