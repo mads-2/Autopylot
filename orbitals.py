@@ -126,6 +126,7 @@ def generate_vmd_script(vmd_file, scr_dir, molden_file, orbital_range, dir_name,
             vmd_script.write("mol addrep 0 \n")
             vmd_script.write("mol modcolor 1 0 ColorID 1  \n")
             vmd_script.write(f"mol modstyle 1 0 Orbital 0.050000 {orbital} 0 0 0.075 1 6 0 0 1  \n")
+            vmd_script.write("mol modmaterial 1 0 Translucent \n")
             
             # **Second isosurface (Negative -0.05, Color: Blue)**
             vmd_script.write("mol selection all \n")
@@ -133,6 +134,7 @@ def generate_vmd_script(vmd_file, scr_dir, molden_file, orbital_range, dir_name,
             vmd_script.write("mol addrep 0 \n")
             vmd_script.write(f"mol modstyle 2 0 Orbital -0.050000 {orbital} 0 0 0.075 1 6 0 0 1  \n")
             vmd_script.write("mol modcolor 2 0 ColorID 0  \n")
+            vmd_script.write("mol modmaterial 2 0 Translucent \n")
 
             vmd_script.write(f'render TachyonInternal "{label}_Orbital{orbital}.tga" \n')
 
