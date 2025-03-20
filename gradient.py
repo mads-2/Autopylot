@@ -71,6 +71,8 @@ def run_gradient_calculations(yaml_file, timeout=4000, interval=60):
 
                 if scr_location and scr_location.exists():
                     gradient_calc_settings['guess'] = str(scr_location)
+                    if 'casscf' in candidate.full_method.lower():
+                        gradient_calc_settings['casguess'] = str(scr_location)
                     print(f"Extracting orbitals from parent ({candidate.full_method}): {scr_location}")
                 else:
                     gradient_calc_settings['guess'] = 'generate'
