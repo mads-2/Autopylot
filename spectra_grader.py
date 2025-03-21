@@ -630,7 +630,7 @@ class Grader:
         return reversed_name
 
     def plot_results(self, image_type):
-        top_scores = self.settings['visuals'].get('top_scores', len(self.data))
+        top_scores = self.settings['visuals'].get('top_scores', len(self.data)) + 1
         # Filter out gradient-related calculations
         filtered_data = self.data[~self.data['Method'].str.contains('gradient_', na=False)].copy()
 
