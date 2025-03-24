@@ -288,7 +288,7 @@ class Grader:
                 overlap_per_candidate.append(overlap_total)
                 all_interval_differences.append(interval_differences)
 
-            max_overlap_idx = np.argmax(overlap_per_candidate)
+            max_overlap_idx = np.argmax(overlap_per_candidate[1:]) + 1
             best_overlap = overlap_per_candidate[max_overlap_idx]
             best_alpha = alphas_for_candidates[max_overlap_idx]
             print(f"Best alpha for {row['Method']}: S{max_overlap_idx}, Alpha: {best_alpha}, Overlap: {best_overlap}\n")
