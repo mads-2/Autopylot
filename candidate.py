@@ -161,7 +161,8 @@ class Candidate:
                 #'castriplets': self.n_triplets,
                 'gpus': '1',
                 'maxit': '10000',
-                'cphfiter': '1000'
+                'cphfiter': '1000',
+                'dcimaxiter': '1000'
                 }
         #if self.calc_type == 'casdft':
             #new_settings = {
