@@ -162,7 +162,18 @@ class Candidate:
                 'gpus': '1',
                 'maxit': '10000',
                 'cphfiter': '1000',
-                'dcimaxiter': '1000'
+                'casscfmacromaxiter': '300',
+                'casscfmicromaxiter': '100',
+                'casscfmaxiter': '400',
+                'casscfmacroconvthre': '1.0e-3',
+                'casscfconvthre': '1.0e-4',
+                'casscfenergyconvthre': '1.0e-6',
+                'cpsacasscfmaxiter': '300',
+                'cpsacasscfconvthre': '1e-6',
+                'casscftrustmaxiter': '100',
+                'casscftrustconvthre': '1e-5',
+                'dcimaxiter': '50',
+                'casscfnriter': '50'
                 }
         #if self.calc_type == 'casdft':
             #new_settings = {
