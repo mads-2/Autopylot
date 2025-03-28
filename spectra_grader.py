@@ -310,11 +310,10 @@ class Grader:
             self.auc_overlap.append(adjusted_score)  # Append adjusted score to the class attribute
         
         # Normalize the scores
-        non_eom_overlaps = [
-            x for i, x in enumerate(self.auc_overlap) if methods.iloc[i]["Method"] != "EOM-CC2"
-        ]
-        max_overlap = max(non_eom_overlaps, default=1)
-        min_overlap = min(non_eom_overlaps, default=0)
+        all_overlaps = [
+            x for i, x in enumerate(self.auc_overlap) if methods.iloc[i]["Method"]]
+        max_overlap = max(all_overlaps, default=1)
+        min_overlap = min(all_overlaps, default=0)
 
         auc_scores_normalized = []
         for i, overlap in enumerate(self.auc_overlap):
@@ -412,8 +411,8 @@ class Grader:
   
         # Process each candidate spectrum
         for idx, row in self.data.iterrows():
-            # Skip the EOM-CC2 reference itself
-            if row['Method'] == 'EOM-CC2' or 'gradient_' in row['Method']:
+            # Skip the over gradients, no spectra from them
+            if row['Method'] == 'gradient_' in row['Method']:
                 continue
 
             # Get the suggested alphas for the current candidate
@@ -673,8 +672,16 @@ class Grader:
             num_plots = 3 if istime_zero else 4
             fig, axes = plt.subplots(num_plots, 1, figsize=[min(len(xs) * 2, 150), 24], sharex=True)
 
-            ax0, ax1, ax3 = axes[:3]
-            ax2 = axes[2] if not istime_zero else None
+            ax0 = axes[0]
+            ax1 = axes[1]
+            ax2 = None
+            ax3 = None
+
+            if istime_zero:
+                ax3 = axes[2]  # Only 3 subplots
+            else:
+                ax2 = axes[2]
+                ax3 = axes[3]  # 4th plot when time isn't zero
 
             # Gold color for the reference in the grader axis (ax3)
             colors = [(0, 0, 1), (1, 0, 0)]  # For candidates
@@ -682,9 +689,16 @@ class Grader:
             grade_colormap = LinearSegmentedColormap.from_list(cmap_name, colors)
         
             ref_color = 'gold'  # Reference gets a gold color
+            
+            nstates = len(self.state_list) - 1 #exclude S0
+            tab20 = cm.get_cmap('tab20', nstates)
+            tab20b = cm.get_cmap('tab20b_r', nstates)
+            alt = []
+            for i in range(nstates):
+                cmap = tab20 if i % 2 == 0 else tab20b
+                alt.append(cmap(i))
 
-            color_map = cm.get_cmap('tab10', len(self.state_list))  # For ax0 and ax1
-            colors = [color_map(i) for i in range(len(self.state_list))]
+            colors = ['black'] + ['red'] + ['blue'] + ['magenta'] + ['orange'] + ['purple'] + ['green'] + ['brown'] + ['dimgrey'] + ['cyan'] + ['navy'] + alt
 
             # Plot energy and normalized energy for each state
             for i, state in enumerate(self.state_list):
@@ -814,7 +828,7 @@ class Grader:
 
         os.makedirs(new_dir, exist_ok=True)
 
-        filtered_data = self.data[self.data['Method'] != 'EOM-CC2']
+        filtered_data = self.data[self.data['Method']]
         if filtered_data.empty or 'Final Score' not in filtered_data.columns:
             print("No scores available to determine the highest-scoring method. Skipping bright state optimization.")
             return
