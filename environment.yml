@@ -1,4 +1,4 @@
-name: autopilot
+name: autopylot
 channels:
   - defaults
   - conda-forge

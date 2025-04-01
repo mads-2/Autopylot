@@ -3,6 +3,7 @@
 import os
 import pandas as pd
 import io
+import re
 from pathlib import Path
 
 # Define paths
@@ -27,7 +28,7 @@ for score_file in score_files:
         with open(score_file, 'r') as file:
             lines = file.readlines()
 
-        # Identify where tables start (multiple geometries present)
+        # Identify where tables start
         table_indices = [i for i, line in enumerate(lines) if "Method" in line and "Final Score" in line]
 
         if not table_indices:
@@ -38,25 +39,37 @@ for score_file in score_files:
             table_data = lines[table_start:]
             table_end = next((i for i, line in enumerate(table_data) if line.strip() == ""), len(table_data))
 
-            df = pd.read_csv(
-                io.StringIO("".join(table_data[:table_end])),
-                delim_whitespace=True,
-                dtype=str,
-                error_bad_lines=False,
-                warn_bad_lines=True
-            )
+            table_block = table_data[:table_end]
+            header_line = table_block[0].strip()
+            data_lines = table_block[1:]
+
+            #Manually define headers because I made the txt file poorly, sorry 
+            headers = [
+                "Method",
+                "Normalized Autopylot Component",
+                "Raw Autopylot Score",
+                "Overlap",
+                "Spectra Penalty",
+                "Rel. Energy Penalty",
+                "Time Component",
+                "Run Time",
+                "Final Score"
+            ]
+
+            #Split each line into 9 columns 
+            cleaned_data = [re.split(r"\s+", line.strip(), maxsplit=len(headers)-1) for line in data_lines if line.strip()]
+
+            if not cleaned_data:
+                print(f"Warning: No data found in table at {score_file}. Skipping.")
+                continue
+
+            try:
+                df = pd.DataFrame(cleaned_data, columns=headers)
+            except Exception as e:
+                print(f"Error creating DataFrame from {score_file}: {e}")
+                continue
 
             print(f"Columns detected in {score_file}: {df.columns.tolist()}")  # Debugging step
-
-            # Fix incorrect column splitting
-            expected_headers = ["Method", "Overlap Component", "Weighted Min. AUC", "Time Component", "Run Time", "Final Score"]
-
-            # Reconstruct the correct column names
-            if len(df.columns) > len(expected_headers):
-                df.columns = expected_headers + [f"Extra_{i}" for i in range(len(df.columns) - len(expected_headers))]
-                df = df[expected_headers]  # Keep only expected columns
-
-            print(f"Renamed columns: {df.columns.tolist()}")  # Debugging step
 
             if "Method" not in df.columns or "Final Score" not in df.columns:
                 print(f"Warning: {score_file} does not have properly formatted columns. Skipping.")
@@ -105,7 +118,7 @@ output_file = cwd / "All_Geoms_Final_Scores.txt"
 
 # Writing results to the output file
 with open(output_file, 'w') as f:
-    f.write("\nMethod                     iinal Score   Count\n")
+    f.write("\nMethod                     Final Score   Count\n")
     f.write("-------------------------------------------------\n")
 
     for _, row in avg_scores.iterrows():

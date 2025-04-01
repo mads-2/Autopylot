@@ -17,7 +17,7 @@ def read_single_arguments():
     parser.add_argument("-i", "--input_yaml", type=Path, required=True, help="Path of yaml input file")
     return parser.parse_args()
 
-def run_gradient_calculations(yaml_file, timeout=4000, interval=60):
+def run_gradient_calculations(yaml_file, timeout=4000000, interval=90):
     """Run gradient calculations for candidates in the YAML file and wait for all to complete."""
     settings = io.yload(yaml_file)
     n_singlets = settings['reference']['singlets']

@@ -245,7 +245,7 @@ def main():
 
     if all_calcs_logs:
         print("\nWaiting for all calculation to complete.")
-        wait_for_completion_wrap(all_calcs_logs, timeout=3600, interval=60)
+        wait_for_completion_wrap(all_calcs_logs, timeout=3600000, interval=90)
         print("\nAll calculations logs processed. Ready to launch orbitals.py.")
 
     print(f"\nLaunching orbitals.py with {fn} as input.")

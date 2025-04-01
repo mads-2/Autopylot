@@ -18,6 +18,7 @@ import re
 import shutil
 import time
 import yaml
+import sys
 import subprocess
 
 pd.set_option('display.max_columns', None)
@@ -828,13 +829,16 @@ class Grader:
 
         os.makedirs(new_dir, exist_ok=True)
 
-        filtered_data = self.data[self.data['Method']]
+        candidates_only = self.data[self.data['Method'] != 'EOM-CC2']
+        ref_row = self.data[self.data['Method'] == 'EOM-CC2'].iloc[0]
+
+        filtered_data = self.data[self.data['Method'].isin(self.data['Method'])]
         if filtered_data.empty or 'Final Score' not in filtered_data.columns:
             print("No scores available to determine the highest-scoring method. Skipping bright state optimization.")
             return
 
         # Identify the highest-scoring method
-        top_Cand_row = filtered_data.sort_values(by='Final Score', ascending=False).iloc[0]
+        top_Cand_row = candidates_only.sort_values(by='Final Score', ascending=False).iloc[0]
         top_Cand = self.reverse_format_method_name(top_Cand_row['Method'])
         print(f"Highest-scoring method selected for 1st bright state optimization: {top_Cand}")
         
@@ -851,7 +855,7 @@ class Grader:
         print(f"States List = {self.state_list}")
 
         for i, state in enumerate(self.state_list[1:], start=1):
-            osc_strength = top_Cand_row.get(f'{state} osc.', 0)  
+            osc_strength = ref_row.get(f'{state} osc.', 0)  
             print(f"Checking {state}: Oscillator Strength = {osc_strength}")  
 
             if osc_strength >= bright_thresh:
@@ -966,8 +970,14 @@ class Grader:
             print(f"Running autopilot.py for S{bright_target} optimization.")
             autopilot_path = Path(__file__).parent / "autopilot.py"
 
+            print(f"Submitting optimization for S{bright_target} using: {sys.executable} {autopilot_path} -i {new_yaml_path}")
             with open(log_file, "w") as log:
-                process = subprocess.Popen(["python", str(autopilot_path), "-i", str(new_yaml_path)], cwd=opt_dir, stdout=log, stderr=log)
+                process = subprocess.Popen(
+                    [sys.executable, str(autopilot_path), "-i", str(new_yaml_path)],
+                    cwd=opt_dir,
+                    stdout=log,
+                    stderr=log
+                )
                 processes.append(process)
 
         for process in processes:
