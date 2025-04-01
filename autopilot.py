@@ -156,6 +156,7 @@ def main():
                     print(f"\nSubmitting CASSCF calculation: {candidate.full_method}")
                     launch_TCcalculation(folder_path, geom_file, candidate_settings)
                     batch_cas[folder_path] = subprocess_casci(folder_path, geom_file, candidate_settings)
+                    all_calcs_logs.append((folder_path / 'tc.out', folder_path))
 
         if casci_firstjobs:
             for folder_path, process in casci_firstjobs.items():
