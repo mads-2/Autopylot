@@ -422,7 +422,16 @@ class Grader:
             formatted_method_name = self.format_method_name(row['Method'])
 
             # Define a color cycle for the different alphas
-            color_cycle = plt.cm.tab10(np.linspace(0, 1, len(alphas_for_candidates)))
+            ashift = len(alphas_for_candidates)
+
+            base_colors = ['black', 'red', 'blue', 'magenta', 'orange', 'purple', 'green', 'brown', 'dimgrey', 'cyan', 'navy']
+            more_colors = max(0, ashift - len(base_colors))
+
+            tab20 = cm.get_cmap('tab20', more_colors)
+            tab20b = cm.get_cmap('tab20b_r', more_colors)
+            alt = [tab20(i) if i % 2 == 0 else tab20b(i) for i in range(more_colors)] 
+
+            colors = base_colors + alt
 
             candidate_energies = []
             for state in range(1, self.n_singlets):
@@ -478,19 +487,19 @@ class Grader:
                 aligned_energy = row[f'S{i} energy'] * alpha
                 
                 if i > 0:
-                    axs[i].axvline(x=aligned_energy, color="black", label=f"Aligned to $S_{i}$ Energy")
+                    axs[i].axvline(x=aligned_energy, color="black", label=f"Aligned to $S_{{{i}}}$ Energy")
 
                 if alpha == 1:
                     max_y_value = max(np.max(spectrum), np.max(ref_spectrum))
 
-                axs[i].plot(E, spectrum, label=f"{formatted_method_name} [$S_{i}$] [α = {alpha:.2f}]", color=color_cycle[i])
+                axs[i].plot(E, spectrum, label=f"{formatted_method_name} [$S_{{{i}}}$] [α = {alpha:.2f}]", color=colors[i])
                 axs[i].set_ylim(0, max_y_value)
 
                 # Add labels, legend, and title
                 axs[i].set_xlabel("Energy (eV)")
                 axs[i].set_ylabel("Absorbance")
                 axs[i].legend(loc='best', fontsize=6)
-                axs[i].set_title(f"Reference vs {formatted_method_name} [$S_{i}$] [α = {alpha:.2f}]", fontsize=8)
+                axs[i].set_title(f"Reference vs {formatted_method_name} [$S_{{{i}}}$] [α = {alpha:.2f}]", fontsize=8)
                 axs[i].grid(False)
         
             for ax in axs[num_alphas:]:
@@ -720,14 +729,28 @@ class Grader:
             
                 for j in filtered_data.index:
                     bright = self.settings['visuals']['countas_bright']
-                    dark = state != 'S0' and filtered_data.loc[j, f'{state} osc.'] < bright and 'S' in state
-                    style = 'dotted' if dark else linestyle
+                    osc = filtered_data.loc[j, f'{state} osc.']
                     line_color = colors[i]
+
+                    if state != 'S0' and 'S' in state: 
+                        if osc >= bright:
+                            style = linestyle
+                            alpha= 1.0
+                        elif osc >= 0.01:
+                            style = linestyle
+                            alpha = 0.4
+                        else:
+                            style = 'dotted'
+                            alpha = 1.0
+                    else:
+                        style = linestyle
+                        alpha = 1.0
+                    
                     x_positions = [j - 0.3, j + 0.3]
                     y_value = filtered_data.loc[j, f'{state} energy']
-                    ax0.plot(x_positions, [y_value, y_value], linestyle=style, marker=marker, color=line_color, linewidth=line_width, label=f'${self.state_list[i].replace("T", "T_{{").replace("S", "S_{{")}}}$'.replace("_{{", "_{").replace("}}", "}") if j == xs[0] else "")
+                    ax0.plot(x_positions, [y_value, y_value], linestyle=style, marker=marker, color=line_color, linewidth=line_width, alpha=alpha, label=f'${self.state_list[i].replace("T", "T_{{").replace("S", "S_{{")}}}$'.replace("_{{", "_{").replace("}}", "}") if j == xs[0] else "")
                     y_value_norm = filtered_data.loc[j, f'{state} norm_energy']
-                    ax1.plot(x_positions, [y_value_norm, y_value_norm], linestyle=style, color=line_color, linewidth=line_width)
+                    ax1.plot(x_positions, [y_value_norm, y_value_norm], linestyle=style, color=line_color, linewidth=line_width, alpha=alpha)
 
             # Plot total scores as a bar graph on ax3
             rescaled_scores = sf.rescale(filtered_data['Final Score'])
