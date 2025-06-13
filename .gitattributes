@@ -1,0 +1,1 @@
+jctc_manuscript_orbitals/jctc_part_* filter=lfs diff=lfs merge=lfs -text
