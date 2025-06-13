@@ -26,5 +26,5 @@ Organized scores will be in `Final_Scores.txt`.\
 The plot with state energies and grader scores can be found in `{title}_results.png`.
 `spectra_grader.py` will generate a directory `{title}_UVVis_plots` directory: here the plot represent the aligments of each state per candidate against the reference of same said candidate.
 
-##Supplimental Information for JCTC Manuscript:
+## Supplimental Information for JCTC Manuscript:
 Orbitals for every method used in the JCTC manuscript is avaialable via `jctc_manuscript_orbitals.tar.gz`. The orbitals have been separated into 3 files in order to fit past the 2Gb max repo limit. To recombine them into one tar file, please use: cat `jctc_part_* > jctc_manuscript_orbitals.tar.gz` Please be aware that the total size of this folder will be ~58Gb when unpacked. Other supplimental information can be made available upon request. Please email Dr. Gregory Curtin at: gcurtin@unc.edu for requests.
