@@ -31,9 +31,9 @@ Orbitals for every method used in the JCTC manuscript is avaialable via `jctc_ma
 
 To access the large orbital files, you’ll need to install Git Large File Storage (LFS).
 You can do this with the following commands:
-`conda install -c conda-forge git-lfs`
-`git lfs install`
-`git lfs pull`
+-`conda install -c conda-forge git-lfs`
+-`git lfs install`
+-`git lfs pull`
 
 This will download all LFS-tracked orbital files required for the project.
 
