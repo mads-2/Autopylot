@@ -26,7 +26,7 @@ def launch_TCcalculation(folder: Path, geometry_file: Path, calc_settings: dict)
         print(f'Launched {folder} on {geometry_file.stem}!')
 
 
-def launch_TMcalculation(folder: Path, geometry_file: Path, n_singlets):
+def launch_TMcalculation(folder: Path, geometry_file: Path, n_singlets, charge):
     '''This function preps and lanches a EOM-CC2 TURBOMOLE calculation given:
     folder: path to the new folder that will contain the calculation
     geometry: path to xyz file
@@ -37,7 +37,8 @@ def launch_TMcalculation(folder: Path, geometry_file: Path, n_singlets):
     newjob.create_dir()
     newjob.copy_geometry_in_newdir(geometry_file)
     with io.cd(folder):
-        TurbomoleInput.from_default_eom(n_singlets, 'define-inputs.txt')
+        tm_input = TurbomoleInput.from_default_eom(n_singlets, charge)
+        tm_input.to_file('define-inputs.txt')
         newjob.prep_eom_calc()
         newjob.write_sbatch_TURBOMOLE()
         os.system('sbatch submit.sbatch')

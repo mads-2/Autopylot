@@ -19,18 +19,19 @@ class TerachemInput:
 @dataclass
 class TurbomoleInput:
     data: dict
-
-    def from_default_eom(n_singlets, input_file='define-inputs.txt'):
+    
+    @staticmethod
+    def from_default_eom(n_singlets, charge):
         commands = f'''
 
 a coord
 *
 no
-b all 6-31G**
+b all def2-TZVP 
 *
 eht
 
-    
+{charge}
 
 scf
 iter
@@ -40,10 +41,6 @@ cc
 freeze
 *
 cbas
-
-
-
-
 b all def2-SV(P)
 *
 memory 5000
@@ -99,9 +96,11 @@ exprop states=all
 #*
 #*
 #'''
-        with open(input_file, 'w') as fn:
-            fn.write(commands)
+        return TurbomoleInput({"input": commands})
 
+    def to_file(self, fn='define-inputs.txt'):
+        with open(fn, 'w') as f:
+            f.write(self.data["input"])
 
 def main():
     new_keys = {'coordinates': 'geom.xyz', 'basis': '6-31G*', 'method': 'pbe0'}

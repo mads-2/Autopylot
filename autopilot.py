@@ -88,7 +88,7 @@ def main():
 
     assert (settings['reference']['method'] == 'eom'), "I only know how to use EOM-CC2 in TURBOMOLE as a reference."
     print("\nI will use the EOM-CC2 as a reference. Launching calculation now. This one might take a while to finish!")
-    launch_TMcalculation(fol_name / 'eom', geom_file, n_singlets-2)
+    launch_TMcalculation(fol_name / 'eom', geom_file, n_singlets-2, charge)
 
     #Group all FOMO-CASCI and CASSCF methods
     cas_group = {}

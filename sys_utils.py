@@ -20,15 +20,14 @@ class JobPrepper:
     def write_sbatch_short_TC(self):
         commands = f'''#!/usr/bin/env bash
 
-#SBATCH -p elipierilab
+#SBATCH -p l40-gpu
 #SBATCH -N 1
-#SBATCH -n 4
+#SBATCH -n 1
 #SBATCH -J cand
 #SBATCH --mem=16G
-#SBATCH -t 3:00:00
+#SBATCH -t 10:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1
-#SBATCH --nodelist=g1803pier02,g1803pier03,g1802pier04
 
 srun run.sh
 
@@ -47,15 +46,14 @@ terachem tc.in > tc.out'''
     def write_sbatch_TURBOMOLE(self):
         commands = f'''#! /bin/bash
 
-#SBATCH -p elipierilab
+#SBATCH -p l40-gpu
 #SBATCH -N 1
-#SBATCH -n 4
+#SBATCH -n 1
 #SBATCH -J ref
 #SBATCH --mem=16G
-#SBATCH -t 3:00:00
+#SBATCH -t 10:00:00
 #SBATCH --qos gpu_access
 #SBATCH --gres=gpu:1
-#SBATCH --nodelist=g1803pier02,g1803pier03,g1802pier04
 
 module load turbomole/7.8
 export PARNODES=2
