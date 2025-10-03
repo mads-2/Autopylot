@@ -46,8 +46,8 @@ My role emphasized **workflow automation, large-scale data handling, dimensional
   - Designed **publication-quality figures** and **workflow schematics** using Inkscape.  
   - Created the **visual abstract** for the paper.  
   - Generated automated plots (method rankings, spectra overlays) that reduced manual interpretation effort.  
-- **Supplementary Information curation:** Managed and compressed **58+ GB of orbital data** using Git LFS; documented procedures for efficient access and recombination.  
-- **External API integration:** Troubleshot and stabilized workflows that relied on **TeraChem Protocol Buffers (TCPB)** — a client–server API for high-performance quantum chemistry — ensuring smooth integration into the larger pipeline.  
+- **Supplementary Information curation:** Managed and compressed orbital data
+- **External API integration:** Troubleshot and stabilized workflows that relied on **TeraChem Protocol Buffers (TCPB)** — a client–server **API** for high-performance quantum chemistry 
 
 ### Skills Built
 Python • Data Visualization • Workflow Automation • Dimensionality Reduction • Reproducibility • HPC (Slurm, GPUs) • API Integration (TCPB) • Large-Scale Data Management • Scientific Communication  
