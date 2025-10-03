@@ -30,9 +30,10 @@ Paper: https://pubmed.ncbi.nlm.nih.gov/40652391/
 Lab:   https://www.pierilab.com  
 Repo:  https://github.com/mads-2/Autopylot  
 
+
 ---
 
-## My Contributions
+ ## ▪ My Contributions ▪
 
 As **second author** on this project, I contributed significantly to both the computational workflow and the publication.  
 My role emphasized **workflow automation, large-scale data handling, dimensionality reduction, and visualization** — skills directly applicable to data science.  
@@ -78,7 +79,10 @@ Here are additional figures I designed and generated for the publication.
   <img src="figures/Basis_Set_Comparison-2.svg" width="600">
 </p>
 
-# Autopylot Workflow Description
+
+
+# ▪ Autopylot Workflow Description ▪
+
 
 ### Definition of work, and step-by-step instructions 
 First, we need to create environment. Type the command: `conda env create -f environment.yml`.\
