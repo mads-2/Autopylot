@@ -1,5 +1,6 @@
-# Autopylot (Pieri Lab Fork)
+# Autopylot: Pragmatic Benchmarking of Excited-State Electronic Structure
 
+```text
    +--------------+
    |.------------.|
    ||   \ | /    ||
@@ -13,7 +14,7 @@
  / /==============\ \
 /____________________\
 \____________________/
-
+```
 
 Paper: https://pubmed.ncbi.nlm.nih.gov/40652391/  
 Lab:   https://www.pierilab.com  
