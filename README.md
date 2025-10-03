@@ -56,6 +56,31 @@ Python • Data Visualization • Workflow Automation • Dimensionality Reducti
 
 ## Data Visualizations Created
 
+---
+
+## Data Visualizations Created
+
+Here are additional figures I designed and generated for the publication.  
+
+### Fig. 2 — Conceptual visualization of Autopylot’s method performance assessment
+<p align="center">
+  <img src="figures/Fig-2.png" width="600">
+</p>
+
+### Fig. 3 — Simplified workflow schematic
+<p align="center">
+  <img src="figures/Fig-3.png" width="600">
+</p>
+
+### Fig. 4 — Detailed computational workflow
+<p align="center">
+  <img src="figures/Fig-4.png" width="600">
+</p>
+
+### Basis Set Comparison
+<p align="center">
+  <img src="figures/Basis_Set_Comparison-2.svg" width="600">
+</p>
 
 # Autopylot Workflow Description
 
