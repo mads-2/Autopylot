@@ -1,11 +1,14 @@
-# Autopylot: Pragmatic Benchmarking of Excited-State Electronic Structure
-
-```text
+# Autopylot: Automated Benchmarking of Excited-State Electronic Structure
+<p align="center">
+  <table>
+    <tr>
+      <td>
+<pre>
    +--------------+
    |.------------.|
-   ||   \ | /    ||
-   ||   ~ O ~    ||
-   ||   / | \    ||
+   ||    \ | /   ||
+   ||    ~ O ~   ||
+   ||    / | \   ||
    ||            ||
    |+------------+|
    +-..--------..-+
@@ -14,7 +17,14 @@
  / /==============\ \
 /____________________\
 \____________________/
-```
+</pre>
+      </td>
+      <td style="padding-left:40px;">
+        <img src="figures/TOC-update-2.svg" width="500">
+      </td>
+    </tr>
+  </table>
+</p>
 
 Paper: https://pubmed.ncbi.nlm.nih.gov/40652391/  
 Lab:   https://www.pierilab.com  
@@ -43,6 +53,9 @@ My role emphasized **workflow automation, large-scale data handling, dimensional
 Python • Data Visualization • Workflow Automation • Dimensionality Reduction • Reproducibility • HPC (Slurm, GPUs) • API Integration (TCPB) • Large-Scale Data Management • Scientific Communication  
 
 ---
+
+## Data Visualizations Created
+
 
 # Autopylot Workflow Description
 
